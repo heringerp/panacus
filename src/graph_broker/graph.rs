@@ -191,7 +191,7 @@ impl GraphStorage {
 
     pub fn from_gfa(gfa_file: &str, is_nice: bool, count_type: CountType) -> Self {
         let (node2id, path_segments, node_lens, _extremities) =
-            Self::parse_nodes_gfa(gfa_file, None);
+            Self::parse_nodes_gfa(gfa_file, None, is_nice);
         let index_edges: bool = (count_type == CountType::Edge) | (count_type == CountType::All);
         let (edge2id, edge_count, degree) = if index_edges {
             let (edge2id, edge_count, degree) = Self::parse_edge_gfa(gfa_file, &node2id);
@@ -305,6 +305,7 @@ impl GraphStorage {
     pub fn parse_nodes_gfa(
         gfa_file: &str,
         k: Option<usize>,
+        is_nice: bool,
     ) -> (
         HashMap<Vec<u8>, ItemId>,
         Vec<PathSegment>,
@@ -322,36 +323,82 @@ impl GraphStorage {
 
         let mut buf = vec![];
         let mut data = bufreader_from_compressed_gfa(gfa_file);
-        while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
-            if buf[0] == b'S' {
-                let mut iter = buf[2..].iter();
-                let offset = iter.position(|&x| x == b'\t').unwrap();
-                if node2id
-                    .insert(buf[2..offset + 2].to_vec(), ItemId(node_id))
-                    .is_some()
-                {
-                    panic!(
-                        "Segment with ID {} occurs multiple times in GFA",
-                        str::from_utf8(&buf[2..offset + 2]).unwrap()
-                    )
+        if is_nice {
+            while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
+                if buf[0] == b'S' {
+                    let mut iter = buf[2..].iter();
+                    let offset = iter.position(|&x| x == b'\t').unwrap();
+                    unsafe {
+                        let node_string = str::from_utf8_unchecked(&buf[2..offset + 2]);
+                        node_id = node_string.parse().expect("Node id is fine");
+                    }
+                    if node2id
+                        .insert(buf[2..offset + 2].to_vec(), ItemId(node_id))
+                        .is_some()
+                    {
+                        panic!(
+                            "Segment with ID {} occurs multiple times in GFA",
+                            str::from_utf8(&buf[2..offset + 2]).unwrap()
+                        )
+                    }
+                    let start_sequence = offset + 3;
+                    let offset = iter
+                        .position(|&x| x == b'\t' || x == b'\n' || x == b'\r')
+                        .unwrap();
+                    if k.is_some() {
+                        let (left, right) = get_extremities(
+                            &buf[start_sequence..start_sequence + offset],
+                            k.unwrap(),
+                        );
+                        extremities.push((left, right));
+                    }
+                    if node_id as usize >= node_lens.len() {
+                        for _ in 0..(node_id as usize - node_lens.len() + 1) {
+                            node_lens.push(0);
+                        }
+                    }
+                    node_lens[node_id as usize] = offset as u32;
+                } else if buf[0] == b'P' {
+                    path_segments.push(Self::parse_path_segment(&buf));
+                } else if buf[0] == b'W' {
+                    path_segments.push(Self::parse_walk_segment(&buf));
                 }
-                let start_sequence = offset + 3;
-                let offset = iter
-                    .position(|&x| x == b'\t' || x == b'\n' || x == b'\r')
-                    .unwrap();
-                if k.is_some() {
-                    let (left, right) =
-                        get_extremities(&buf[start_sequence..start_sequence + offset], k.unwrap());
-                    extremities.push((left, right));
-                }
-                node_lens.push(offset as u32);
-                node_id += 1;
-            } else if buf[0] == b'P' {
-                path_segments.push(Self::parse_path_segment(&buf));
-            } else if buf[0] == b'W' {
-                path_segments.push(Self::parse_walk_segment(&buf));
+                buf.clear();
             }
-            buf.clear();
+        } else {
+            while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
+                if buf[0] == b'S' {
+                    let mut iter = buf[2..].iter();
+                    let offset = iter.position(|&x| x == b'\t').unwrap();
+                    if node2id
+                        .insert(buf[2..offset + 2].to_vec(), ItemId(node_id))
+                        .is_some()
+                    {
+                        panic!(
+                            "Segment with ID {} occurs multiple times in GFA",
+                            str::from_utf8(&buf[2..offset + 2]).unwrap()
+                        )
+                    }
+                    let start_sequence = offset + 3;
+                    let offset = iter
+                        .position(|&x| x == b'\t' || x == b'\n' || x == b'\r')
+                        .unwrap();
+                    if k.is_some() {
+                        let (left, right) = get_extremities(
+                            &buf[start_sequence..start_sequence + offset],
+                            k.unwrap(),
+                        );
+                        extremities.push((left, right));
+                    }
+                    node_lens.push(offset as u32);
+                    node_id += 1;
+                } else if buf[0] == b'P' {
+                    path_segments.push(Self::parse_path_segment(&buf));
+                } else if buf[0] == b'W' {
+                    path_segments.push(Self::parse_walk_segment(&buf));
+                }
+                buf.clear();
+            }
         }
 
         log::info!(
