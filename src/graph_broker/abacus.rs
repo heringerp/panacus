@@ -18,7 +18,7 @@ use crate::io::*;
 use crate::util::*;
 
 use super::graph::{GraphStorage, PathSegment};
-use super::util::{parse_gfa_paths_walks, parse_gfa_paths_walks_multiple};
+use super::util::parse_gfa_paths_walks;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct GraphMaskParameters {
@@ -475,10 +475,10 @@ impl GraphMask {
 
 #[derive(Debug, Clone)]
 pub struct AbacusByTotal {
-    pub count: CountType,
-    pub countable: Vec<CountSize>,
-    pub uncovered_bps: Option<HashMap<ItemIdSize, usize>>,
-    pub groups: Vec<String>,
+    pub count: CountType,                                  // Type of feature
+    pub countable: Vec<CountSize>, // Each entry gives coverage of each feature (except for bp, works similar to nodes)
+    pub uncovered_bps: Option<HashMap<ItemIdSize, usize>>, // Map, for each incomplete node the number of not covered bps
+    pub groups: Vec<String>, // List of group names (len == max coverage)
 }
 
 impl AbacusByTotal {
@@ -503,37 +503,56 @@ impl AbacusByTotal {
         )
     }
 
+    pub fn from_item_table(
+        graph_mask: &GraphMask,
+        graph_storage: &GraphStorage,
+        count: CountType,
+        item_table: ItemTable,
+        exclude_table: Option<ActiveTable>,
+        subset_covered_bps: Option<IntervalContainer>,
+    ) -> Self {
+        Self::item_table_to_abacus(
+            graph_mask,
+            graph_storage,
+            count,
+            item_table,
+            exclude_table,
+            subset_covered_bps,
+        )
+    }
+
     pub fn from_gfa_multiple<R: std::io::Read>(
         data: &mut BufReader<R>,
         graph_mask: &GraphMask,
         graph_storage: &GraphStorage,
         count_types: &Vec<CountType>,
-    ) -> (Vec<Self>, HashMap<PathSegment, (u32, u32)>) {
-        let (item_tables, exclude_tables, mut subset_covered_bps, path_lens) =
-            parse_gfa_paths_walks_multiple(data, graph_mask, graph_storage, count_types);
-        let mut item_tables = VecDeque::from(item_tables);
-        let mut exclude_tables = VecDeque::from(exclude_tables);
-        let mut subset_covered_bps: VecDeque<_> = count_types
-            .iter()
-            .map(|count| match count {
-                &CountType::Bp if subset_covered_bps.is_some() => take(&mut subset_covered_bps),
-                _ => None,
-            })
-            .collect();
-        let abaci = count_types
-            .iter()
-            .map(|count| {
-                Self::item_table_to_abacus(
-                    graph_mask,
-                    graph_storage,
-                    *count,
-                    item_tables.pop_front().unwrap(),
-                    exclude_tables.pop_front().unwrap(),
-                    subset_covered_bps.pop_front().unwrap(),
-                )
-            })
-            .collect();
-        (abaci, path_lens)
+    ) -> (Vec<AbacusByTotal>, HashMap<PathSegment, (u32, u32)>) {
+        //let (item_tables, exclude_tables, mut subset_covered_bps, path_lens) =
+        //    parse_gfa_paths_walks_multiple(data, graph_mask, graph_storage, count_types);
+        //let mut item_tables = VecDeque::from(item_tables);
+        //let mut exclude_tables = VecDeque::from(exclude_tables);
+        //let mut subset_covered_bps: VecDeque<_> = count_types
+        //    .iter()
+        //    .map(|count| match count {
+        //        &CountType::Bp if subset_covered_bps.is_some() => take(&mut subset_covered_bps),
+        //        _ => None,
+        //    })
+        //    .collect();
+        //let abaci = count_types
+        //    .iter()
+        //    .map(|count| {
+        //        Self::item_table_to_abacus(
+        //            graph_mask,
+        //            graph_storage,
+        //            *count,
+        //            item_tables.pop_front().unwrap(),
+        //            exclude_tables.pop_front().unwrap(),
+        //            subset_covered_bps.pop_front().unwrap(),
+        //        )
+        //    })
+        //    .collect();
+        //(abaci, path_lens)
+        (Vec::new(), HashMap::new())
     }
 
     pub fn item_table_to_abacus(
@@ -545,6 +564,7 @@ impl AbacusByTotal {
         subset_covered_bps: Option<IntervalContainer>,
     ) -> Self {
         log::info!("counting abacus entries..");
+        log::info!("item table: {:?}", item_table);
         // first element in countable is "zero" element. It is ignored in counting
         let mut countable: Vec<CountSize> = vec![0; graph_storage.number_of_items(&count) + 1];
         // countable with ID "0" is special and should not be considered in coverage histogram

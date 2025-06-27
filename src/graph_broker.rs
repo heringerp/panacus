@@ -1,5 +1,9 @@
 use core::panic;
+use std::collections::VecDeque;
+use std::io::{BufRead, BufReader, Read};
 use std::iter::zip;
+use std::mem::take;
+use std::time::Instant;
 use std::{
     collections::{HashMap, HashSet},
     io::{BufWriter, Error, Write},
@@ -8,7 +12,13 @@ use std::{
 
 use abacus::{AbacusByTotal, GraphMask};
 use graph::GraphStorage;
+use util::{
+    parse_path_identifier, parse_path_seq_to_item_vec, parse_path_seq_update_tables_multiple,
+    parse_walk_identifier, parse_walk_seq_to_item_vec, parse_walk_seq_update_tables_multiple,
+    update_tables_edgecount, update_tables_multiple,
+};
 
+use crate::util::{intersects, is_contained, ActiveTable, IntervalContainer, ItemTable};
 use crate::{
     analyses::InputRequirement as Req, analysis_parameter::Grouping,
     io::bufreader_from_compressed_gfa, util::CountType,
@@ -46,12 +56,13 @@ pub struct GraphBroker {
 
     // AbabcusAuxilliary
     abacus_aux_params: GraphMaskParameters,
-    abacus_aux: Option<GraphMask>,
+    graph_mask: Option<GraphMask>,
 
     total_abaci: Option<HashMap<CountType, AbacusByTotal>>,
     group_abacus: Option<AbacusByGroup>,
     hists: Option<HashMap<CountType, Hist>>,
     csc_abacus: bool,
+    paths: HashMap<PathSegment, Vec<ItemId>>,
 
     path_lens: Option<HashMap<PathSegment, (u32, u32)>>,
     gfa_file: String,
@@ -67,7 +78,7 @@ impl GraphBroker {
             name: "".to_string(),
             graph_aux: None,
             abacus_aux_params: GraphMaskParameters::default(),
-            abacus_aux: None,
+            graph_mask: None,
             total_abaci: None,
             group_abacus: None,
             hists: None,
@@ -77,6 +88,7 @@ impl GraphBroker {
             input_requirements: HashSet::new(),
             count_type: CountType::All,
             csc_abacus: false,
+            paths: HashMap::new(),
         }
     }
 
@@ -172,7 +184,7 @@ impl GraphBroker {
             name: "".to_string(),
             graph_aux,
             abacus_aux_params: GraphMaskParameters::default(),
-            abacus_aux: None,
+            graph_mask: None,
             total_abaci: None,
             group_abacus: None,
             hists: None,
@@ -182,6 +194,7 @@ impl GraphBroker {
             input_requirements: input_requirements.clone(),
             count_type,
             csc_abacus: false,
+            paths: HashMap::new(),
         }
     }
 
@@ -224,9 +237,12 @@ impl GraphBroker {
         self
     }
 
-    fn finish(&mut self) -> Result<(), Error> {
-        self.set_abacus_aux()?;
+    // Second parse of graph (this time depending on subset, etc.)
+    // focussed on graph paths
+    pub fn finish(&mut self) -> Result<(), Error> {
+        self.set_graph_mask()?;
         self.set_abaci_by_total();
+        println!("abaci {:?}", self.total_abaci);
         if self.input_requirements.contains(&Req::Hist) {
             self.set_hists();
         }
@@ -297,8 +313,8 @@ impl GraphBroker {
     }
 
     pub fn get_group_count(&self) -> usize {
-        Self::check_and_error(self.abacus_aux.as_ref(), "abacus_aux -> group_count");
-        self.abacus_aux.as_ref().unwrap().count_groups()
+        Self::check_and_error(self.graph_mask.as_ref(), "abacus_aux -> group_count");
+        self.graph_mask.as_ref().unwrap().count_groups()
     }
 
     pub fn get_fname(&self) -> String {
@@ -306,8 +322,8 @@ impl GraphBroker {
     }
 
     pub fn get_groups(&self) -> &HashMap<PathSegment, String> {
-        Self::check_and_error(self.abacus_aux.as_ref(), "abacus_aux -> groups");
-        &self.abacus_aux.as_ref().unwrap().groups
+        Self::check_and_error(self.graph_mask.as_ref(), "abacus_aux -> groups");
+        &self.graph_mask.as_ref().unwrap().groups
     }
 
     pub fn get_path_lens(&self) -> &HashMap<PathSegment, (u32, u32)> {
@@ -342,8 +358,8 @@ impl GraphBroker {
             .to_tsv(total, out, self.graph_aux.as_ref().unwrap())
     }
 
-    fn set_abacus_aux(&mut self) -> Result<(), Error> {
-        self.abacus_aux = Some(GraphMask::from_datamgr(
+    fn set_graph_mask(&mut self) -> Result<(), Error> {
+        self.graph_mask = Some(GraphMask::from_datamgr(
             &self.abacus_aux_params,
             self.graph_aux.as_ref().unwrap(),
         )?);
@@ -376,7 +392,7 @@ impl GraphBroker {
         let mut data = bufreader_from_compressed_gfa(&self.gfa_file);
         let abacus = AbacusByGroup::from_gfa(
             &mut data,
-            self.abacus_aux.as_ref().unwrap(),
+            self.graph_mask.as_ref().unwrap(),
             self.graph_aux.as_ref().unwrap(),
             count,
             true,
@@ -387,28 +403,14 @@ impl GraphBroker {
     }
 
     fn set_abaci_by_total(&mut self) {
-        let count_types_not_edge = if self.count_type == CountType::All {
-            vec![CountType::Node, CountType::Bp]
-        } else if self.count_type != CountType::Edge {
-            vec![self.count_type.clone()]
-        } else {
-            Vec::new()
-        };
-        let shall_calculate_edge =
-            self.count_type == CountType::All || self.count_type == CountType::Edge;
+        let (count_types_not_edge, shall_calculate_edge) = self.get_abacus_count_type();
         log::info!(
             "calculating abaci for count_types: {:?}, and edge: {}",
             count_types_not_edge,
             shall_calculate_edge
         );
-        let mut data = bufreader_from_compressed_gfa(&self.gfa_file);
         let mut abaci = if !count_types_not_edge.is_empty() {
-            let (abaci, path_lens) = AbacusByTotal::from_gfa_multiple(
-                &mut data,
-                self.abacus_aux.as_ref().unwrap(),
-                self.graph_aux.as_ref().unwrap(),
-                &count_types_not_edge,
-            );
+            let (abaci, path_lens) = self.from_gfa_multiple(&count_types_not_edge);
             let abaci: HashMap<CountType, AbacusByTotal> =
                 zip(count_types_not_edge, abaci).collect();
             if self.input_requirements.contains(&Req::PathLens) {
@@ -419,15 +421,252 @@ impl GraphBroker {
             HashMap::new()
         };
         if shall_calculate_edge {
-            let mut data = bufreader_from_compressed_gfa(&self.gfa_file);
-            let (mut edge_abacus, _) = AbacusByTotal::from_gfa_multiple(
-                &mut data,
-                self.abacus_aux.as_ref().unwrap(),
-                self.graph_aux.as_ref().unwrap(),
-                &vec![CountType::Edge],
-            );
+            let (mut edge_abacus, _) = self.from_gfa_multiple(&vec![CountType::Edge]);
             abaci.insert(CountType::Edge, edge_abacus.pop().unwrap());
         }
         self.total_abaci = Some(abaci);
+    }
+
+    // Nodes and bps behave similarly, while edges have to be calculated separately.
+    fn get_abacus_count_type(&mut self) -> (Vec<CountType>, bool) {
+        let count_types_not_edge = if self.count_type == CountType::All {
+            vec![CountType::Node, CountType::Bp]
+        } else if self.count_type != CountType::Edge {
+            vec![self.count_type.clone()]
+        } else {
+            Vec::new()
+        };
+        let shall_calculate_edge =
+            self.count_type == CountType::All || self.count_type == CountType::Edge;
+        (count_types_not_edge, shall_calculate_edge)
+    }
+
+    pub fn from_gfa_multiple(
+        &self,
+        count_types: &Vec<CountType>,
+    ) -> (Vec<AbacusByTotal>, HashMap<PathSegment, (u32, u32)>) {
+        let (item_tables, exclude_tables, mut subset_covered_bps, path_lens) =
+            self.parse_paths_walks(count_types, &Vec::new());
+        let mut item_tables = VecDeque::from(item_tables);
+        let mut exclude_tables = VecDeque::from(exclude_tables);
+        let mut subset_covered_bps: VecDeque<_> = count_types
+            .iter()
+            .map(|count| match count {
+                &CountType::Bp if subset_covered_bps.is_some() => take(&mut subset_covered_bps),
+                _ => None,
+            })
+            .collect();
+        let abaci = count_types
+            .iter()
+            .map(|count| {
+                AbacusByTotal::item_table_to_abacus(
+                    self.graph_mask
+                        .as_ref()
+                        .expect("Graph mask should exist at this point"),
+                    self.graph_aux
+                        .as_ref()
+                        .expect("Graph storage should exist at this point"),
+                    *count,
+                    item_tables.pop_front().unwrap(),
+                    exclude_tables.pop_front().unwrap(),
+                    subset_covered_bps.pop_front().unwrap(),
+                )
+            })
+            .collect();
+        (abaci, path_lens)
+    }
+
+    pub fn parse_paths_walks(
+        &self,
+        count_types: &Vec<CountType>,
+        paths_to_collect: &Vec<PathSegment>,
+    ) -> (
+        Vec<ItemTable>,
+        Vec<Option<ActiveTable>>,
+        Option<IntervalContainer>,
+        HashMap<PathSegment, (u32, u32)>,
+    ) {
+        log::info!("parsing path + walk sequences");
+        let mut data = bufreader_from_compressed_gfa(&self.gfa_file);
+        let graph_storage = self
+            .graph_aux
+            .as_ref()
+            .expect("Graph should have set graph storage");
+        let graph_mask = self
+            .graph_mask
+            .as_ref()
+            .expect("Graph should have graph mask set");
+        let mut item_tables =
+            vec![ItemTable::new(graph_storage.path_segments.len()); count_types.len()];
+
+        let (mut subset_covered_bps, mut exclude_tables, include_map, exclude_map) =
+            graph_mask.load_optional_subsetting_multiple(graph_storage, count_types);
+
+        let mut num_path = 0;
+        let complete: Vec<(usize, usize)> = vec![(0, usize::MAX)];
+        let mut paths_len: HashMap<PathSegment, (u32, u32)> = HashMap::new();
+
+        let mut buf = vec![];
+        let timer = Instant::now();
+        while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
+            if buf[0] == b'P' || buf[0] == b'W' {
+                let (path_seg, buf_path_seg) = match buf[0] {
+                    b'P' => parse_path_identifier(&buf),
+                    b'W' => parse_walk_identifier(&buf),
+                    _ => unreachable!(),
+                };
+
+                log::debug!("processing path {}", &path_seg);
+
+                let include_coords = if graph_mask.include_coords.is_none() {
+                    &complete[..]
+                } else {
+                    match include_map.get(&path_seg.id()) {
+                        None => &[],
+                        Some(coords) => {
+                            log::debug!(
+                                "found include coords {:?} for path segment {}",
+                                &coords[..],
+                                &path_seg.id()
+                            );
+                            &coords[..]
+                        }
+                    }
+                };
+                let exclude_coords = if graph_mask.exclude_coords.is_none() {
+                    &[]
+                } else {
+                    match exclude_map.get(&path_seg.id()) {
+                        None => &[],
+                        Some(coords) => {
+                            log::debug!(
+                                "found exclude coords {:?} for path segment {}",
+                                &coords[..],
+                                &path_seg.id()
+                            );
+                            &coords[..]
+                        }
+                    }
+                };
+
+                let (start, end) = path_seg.coords().unwrap_or((0, usize::MAX));
+
+                // do not process the path sequence if path is neither part of subset nor exclude
+                if graph_mask.include_coords.is_some()
+                    && !intersects(include_coords, &(start, end))
+                    && !intersects(exclude_coords, &(start, end))
+                {
+                    log::debug!("path {} does not intersect with subset coordinates {:?} nor with exclude coordinates {:?} and therefore is skipped from processing",
+                    &path_seg, &include_coords, &exclude_coords);
+
+                    // update prefix sum
+                    for item_table in &mut item_tables {
+                        item_table.id_prefsum[num_path + 1] += item_table.id_prefsum[num_path];
+                    }
+
+                    num_path += 1;
+                    buf.clear();
+                    continue;
+                }
+
+                let mut indices: HashMap<CountType, Vec<usize>> = HashMap::new();
+                for (i, count_type) in count_types
+                    .iter()
+                    .map(|c| match c {
+                        CountType::Node => &CountType::Bp,
+                        count => count,
+                    })
+                    .enumerate()
+                {
+                    if let Some(entry) = indices.get_mut(count_type) {
+                        (*entry).push(i);
+                    } else {
+                        indices.insert(*count_type, vec![i]);
+                    }
+                }
+                indices.into_iter().for_each(|(count, is)| {
+                if count != CountType::Edge
+                    && (graph_mask.include_coords.is_none()
+                        || is_contained(include_coords, &(start, end)))
+                        && (graph_mask.exclude_coords.is_none()
+                            || is_contained(exclude_coords, &(start, end)))
+                {
+                    log::debug!("path {} is fully contained within subset coordinates {:?} and is eligible for full parallel processing", path_seg, include_coords);
+                    let mut none = None;
+                    let ex: Vec<&mut Option<ActiveTable>> = if exclude_coords.is_empty() {
+                        vec![&mut none]
+                    } else {
+                        exclude_tables.iter_mut().enumerate().filter(|(i, _)| is.contains(i)).map(|(_, e)| e).collect()
+                    };
+                    let (num_added_nodes, bp_len) = match buf[0] {
+                        b'P' => parse_path_seq_update_tables_multiple(
+                            buf_path_seg,
+                            graph_storage,
+                            &mut item_tables[is[0]],
+                            ex,
+                            num_path,
+                        ),
+                        b'W' => parse_walk_seq_update_tables_multiple(
+                            buf_path_seg,
+                            graph_storage,
+                            &mut item_tables[is[0]],
+                            ex,
+                            num_path,
+                        ),
+                        _ => unreachable!(),
+                    };
+                    paths_len.insert(path_seg.clone(), (num_added_nodes, bp_len));
+                } else {
+                    let sids = match buf[0] {
+                        b'P' => parse_path_seq_to_item_vec(buf_path_seg, graph_storage),
+                        b'W' => parse_walk_seq_to_item_vec(buf_path_seg, graph_storage),
+                        _ => unreachable!(),
+                    };
+                    let mut exclude_tables_red = exclude_tables.iter_mut().enumerate().filter(|(i, _)| is.contains(i)).map(|(_, e)| e).collect();
+                    match count {
+                        CountType::Node | CountType::Bp => {
+                            let (node_len, bp_len) = update_tables_multiple(
+                                &mut item_tables[is[0]],
+                                &mut subset_covered_bps.as_mut(),
+                                exclude_tables_red,
+                                num_path,
+                                graph_storage,
+                                sids,
+                                include_coords,
+                                exclude_coords,
+                                start,
+                            );
+                            paths_len.insert(path_seg.clone(), (node_len as u32, bp_len as u32));
+                        }
+                        CountType::Edge => update_tables_edgecount(
+                            &mut item_tables[is[0]],
+                            &mut exclude_tables_red[0].as_mut(),
+                            num_path,
+                            graph_storage,
+                            sids,
+                            include_coords,
+                            exclude_coords,
+                            start,
+                        ),
+                        CountType::All => unreachable!("inadmissable count type"),
+                    };
+                }
+            });
+                num_path += 1;
+            }
+            buf.clear();
+        }
+        let duration = timer.elapsed();
+        log::info!(
+            "func done; count: {:?}; time elapsed: {:?}",
+            count_types,
+            duration
+        );
+
+        // In case of node/bps, copy first table into the second
+        if item_tables.len() == 2 {
+            item_tables[1] = item_tables[0].clone();
+        }
+        (item_tables, exclude_tables, subset_covered_bps, paths_len)
     }
 }

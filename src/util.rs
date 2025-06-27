@@ -79,8 +79,8 @@ pub fn get_default_plot_downloads() -> Vec<(String, String)> {
 
 #[derive(Debug, Clone)]
 pub struct ItemTable {
-    pub items: Vec<ItemIdSize>,
-    pub id_prefsum: Vec<ItemIdSize>,
+    pub items: Vec<ItemIdSize>, // For each path, each feature in one long list
+    pub id_prefsum: Vec<ItemIdSize>, // In the items list, where (at what index) does each new path start (+ length)
 }
 
 impl ItemTable {
