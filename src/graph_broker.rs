@@ -346,11 +346,6 @@ impl GraphBroker {
     }
 
     pub fn get_path(&self, path_seg: &PathSegment) -> &Vec<ItemId> {
-        eprintln!(
-            "path: {:?}, has: {:?}",
-            path_seg,
-            self.paths.keys().cloned().collect::<Vec<_>>()
-        );
         &self.paths[path_seg]
     }
 

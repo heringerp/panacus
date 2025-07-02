@@ -356,7 +356,8 @@ for (let key in objects.datasets) {
             "data": c.data,
             "width": 1100,
             "mark": {
-                "type": "tick",
+                "type": "rect",
+                "width": 2,
                 "clip": true,
                 "tooltip": true,
             },

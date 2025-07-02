@@ -5,6 +5,7 @@ pub mod info;
 pub mod node_distribution;
 pub mod ordered_histgrowth;
 pub mod regional_degree;
+pub mod regional_helpers;
 pub mod similarity;
 pub mod table;
 
