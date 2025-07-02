@@ -6,6 +6,7 @@ use strum_macros::{EnumIter, EnumString, EnumVariantNames};
 
 use serde::{Deserialize, Serialize};
 
+use crate::analyses::regional_degree::RegionalDegree;
 use crate::analyses::ConstructibleAnalysis;
 use crate::analyses::{
     coverage_line::CoverageLine, growth::Growth, info::Info, node_distribution::NodeDistribution,
@@ -198,6 +199,9 @@ pub enum AnalysisParameter {
         name: String,
         file: String,
     },
+    RegionalDegree {
+        reference: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
@@ -250,6 +254,9 @@ impl AnalysisParameter {
             }
             t @ Self::Table { .. } => {
                 get_analysis_task!(Table, t)
+            }
+            r @ Self::RegionalDegree { .. } => {
+                get_analysis_task!(RegionalDegree, r)
             }
             Self::Custom { name, file } => {
                 (vec![Task::CustomSection { name, file }], HashSet::new())

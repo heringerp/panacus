@@ -669,10 +669,11 @@ pub fn parse_walk_seq_update_tables_multiple(
     item_table: &mut ItemTable,
     exclude_tables: Vec<&mut Option<ActiveTable>>,
     num_path: usize,
-) -> (u32, u32) {
+    should_keep_path: bool,
+) -> (u32, u32, Option<Vec<ItemId>>) {
     // later codes assumes that data is non-empty...
     if data.is_empty() {
-        return (0, 0);
+        return (0, 0, None);
     }
 
     let mut it = data.iter();
@@ -683,6 +684,11 @@ pub fn parse_walk_seq_update_tables_multiple(
     log::debug!("parsing walk sequences of size {}..", end);
 
     let (segment_ids, bp_len) = get_walk_segment_ids(data, graph_storage, end, CHUNK_SIZE);
+
+    let path_sequence = match should_keep_path {
+        true => Some(segment_ids.clone()),
+        false => None,
+    };
 
     segment_ids.into_iter().for_each(|segment_id| {
         item_table.items.push(segment_id.0);
@@ -707,7 +713,7 @@ pub fn parse_walk_seq_update_tables_multiple(
     }
 
     log::debug!("..done");
-    (num_nodes_path as u32, bp_len)
+    (num_nodes_path as u32, bp_len, path_sequence)
 }
 
 pub fn parse_walk_seq_update_tables(
@@ -961,7 +967,8 @@ pub fn parse_path_seq_update_tables_multiple(
     item_table: &mut ItemTable,
     exclude_tables: Vec<&mut Option<ActiveTable>>,
     num_path: usize,
-) -> (u32, u32) {
+    should_keep_path: bool,
+) -> (u32, u32, Option<Vec<ItemId>>) {
     let mut it = data.iter();
     let end = it
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
@@ -970,6 +977,11 @@ pub fn parse_path_seq_update_tables_multiple(
     log::debug!("parsing path sequences of size {} bytes..", end);
 
     let (segment_ids, bp_len) = get_path_segment_ids(data, graph_storage, end, CHUNK_SIZE);
+
+    let path_sequence = match should_keep_path {
+        true => Some(segment_ids.clone()),
+        false => None,
+    };
 
     segment_ids.into_iter().for_each(|segment_id| {
         item_table.items.push(segment_id.0);
@@ -994,7 +1006,7 @@ pub fn parse_path_seq_update_tables_multiple(
     }
 
     log::debug!("..done");
-    (num_nodes_path as u32, bp_len)
+    (num_nodes_path as u32, bp_len, path_sequence)
 }
 
 pub fn parse_path_seq_update_tables(

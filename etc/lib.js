@@ -42,6 +42,14 @@ class Heatmap {
     }
 }
 
+class Chromosomal {
+    constructor(id, name, data) {
+        this.id = id;
+        this.name = name;
+        this.data = data;
+    }
+}
+
 class VegaPlot {
     constructor(id, jsonContent) {
         this.id = id;

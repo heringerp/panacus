@@ -564,7 +564,6 @@ impl AbacusByTotal {
         subset_covered_bps: Option<IntervalContainer>,
     ) -> Self {
         log::info!("counting abacus entries..");
-        log::info!("item table: {:?}", item_table);
         // first element in countable is "zero" element. It is ignored in counting
         let mut countable: Vec<CountSize> = vec![0; graph_storage.number_of_items(&count) + 1];
         // countable with ID "0" is special and should not be considered in coverage histogram

@@ -4,13 +4,16 @@ pub mod hist;
 pub mod info;
 pub mod node_distribution;
 pub mod ordered_histgrowth;
+pub mod regional_degree;
 pub mod similarity;
 pub mod table;
 
 use std::collections::HashSet;
 
 use crate::{
-    analysis_parameter::AnalysisParameter, graph_broker::GraphBroker, html_report::AnalysisSection,
+    analysis_parameter::AnalysisParameter,
+    graph_broker::{GraphBroker, PathSegment},
+    html_report::AnalysisSection,
     util::CountType,
 };
 
@@ -37,4 +40,5 @@ pub enum InputRequirement {
     Hist,
     AbacusByGroup(CountType),
     Graph(String),
+    Path(PathSegment),
 }

@@ -346,6 +346,75 @@ for (let key in objects.datasets) {
                 });
             });
         });
+    } else if (element instanceof Chromosomal) {
+        let c = element;
+        let thisId = 'chart-chromosomal-' + c.id;
+        // buildPlotDownload(myChart, h.id, fname);
+        let mySpec = {
+            "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+            "description": "Hexbin",
+            "data": c.data,
+            "width": 1100,
+            "mark": {
+                "type": "tick",
+                "clip": true,
+                "tooltip": true,
+            },
+            "encoding": {
+                "x": {
+                    "field": "x",
+                    "axis": {"domain": false, "grid": false, "ticks": false, "labels": false},
+                },
+                "color": {
+                    "field": "y",
+                    "type": "quantitative",
+                    "scale": {"scheme": "yellowgreenblue"}
+                },
+            },
+            "config": {
+                "axis": {"grid": true, "tickBand": "extent"},
+                "view": {"stroke": "black", "strokeWidth": 2, "cornerRadius": 20}
+            }
+          };
+
+        let opt = {
+            "actions": false,
+        };
+        vegaEmbed(`#${CSS.escape(thisId)}`, mySpec, opt).then(({ view, spec, vgSpec }) => {
+            // Export PNG
+            let png_button = document.getElementById('btn-download-plot-png-' + c.id);
+            png_button.addEventListener('click', () => {
+                view.toImageURL('png').then(url => {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'visualization.png';
+                    a.click();
+                });
+            });
+
+            // Export SVG
+            let svg_button = document.getElementById('btn-download-plot-svg-' + c.id);
+            svg_button.removeEventListener('click', svg_button);
+            svg_button.addEventListener('click', function svg_button() {
+                view.toImageURL('svg').then(url => {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'visualization.svg';
+                    a.click();
+                });
+            });
+
+            // Open in Vega Editor
+            let vega_editor_button = document.getElementById('btn-download-plot-vega-editor-' + c.id);
+            vega_editor_button.addEventListener('click', () => {
+                post_to_vega_editor(window, {
+                    mode: 'vega-lite',
+                    spec: JSON.stringify(spec, null, 2),
+                    renderer: undefined,
+                    config: undefined,
+                });
+            });
+        });
     } else if (element instanceof Hexbin) {
         let h = element;
         let thisId = 'chart-hexbin-' + h.id;

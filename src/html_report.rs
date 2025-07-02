@@ -36,6 +36,7 @@ pub const BAR_HBS: &[u8] = include_bytes!("../hbs/bar.hbs");
 pub const TREE_HBS: &[u8] = include_bytes!("../hbs/tree.hbs");
 pub const TABLE_HBS: &[u8] = include_bytes!("../hbs/table.hbs");
 pub const HEATMAP_HBS: &[u8] = include_bytes!("../hbs/heatmap.hbs");
+pub const CHROMOSOMAL_HBS: &[u8] = include_bytes!("../hbs/chromosomal.hbs");
 pub const ANALYSIS_TAB_HBS: &[u8] = include_bytes!("../hbs/analysis_tab.hbs");
 pub const REPORT_CONTENT_HBS: &[u8] = include_bytes!("../hbs/report_content.hbs");
 pub const HEXBIN_HBS: &[u8] = include_bytes!("../hbs/hexbin.hbs");
@@ -454,6 +455,11 @@ pub enum ReportItem {
         id: String,
         file: String,
     },
+    Chromosomal {
+        id: String,
+        name: String,
+        values: Vec<(usize, f64)>,
+    },
 }
 
 impl ReportItem {
@@ -469,6 +475,7 @@ impl ReportItem {
             Self::Svg { id, .. } => id.to_string(),
             Self::Json { id, .. } => id.to_string(),
             Self::Pdf { id, .. } => id.to_string(),
+            Self::Chromosomal { id, .. } => id.to_string(),
         }
     }
 
@@ -484,6 +491,7 @@ impl ReportItem {
             Self::Svg { .. } => "Svg".to_string(),
             Self::Json { .. } => "Json".to_string(),
             Self::Pdf { .. } => "Pdf".to_string(),
+            Self::Chromosomal { .. } => "Chromosomal".to_string(),
         }
     }
 
@@ -538,6 +546,33 @@ impl ReportItem {
                 ]);
                 Ok((
                     registry.render("heatmap", &data)?,
+                    HashMap::from([(
+                        "datasets".to_string(),
+                        HashMap::from([(id.clone(), js_object)]),
+                    )]),
+                ))
+            }
+            Self::Chromosomal { id, name, values } => {
+                if !registry.has_template("chromosomal") {
+                    registry.register_template_string(
+                        "chromosomal",
+                        from_utf8(CHROMOSOMAL_HBS).unwrap(),
+                    )?;
+                }
+                let data: Vec<String> = values
+                    .into_iter()
+                    .map(|(l, v)| format!("{{ 'x': {}, 'y': {} }}", l, v))
+                    .collect();
+                let mut data_text = "{'values': [".to_string();
+                for datum in data {
+                    data_text.push_str(&datum);
+                    data_text.push_str(", ");
+                }
+                data_text.push_str("]}");
+                let js_object = format!("new Chromosomal('{}', '{}', {})", id, name, data_text,);
+                let data = HashMap::from([("id".to_string(), to_json(&id))]);
+                Ok((
+                    registry.render("chromosomal", &data)?,
                     HashMap::from([(
                         "datasets".to_string(),
                         HashMap::from([(id.clone(), js_object)]),
