@@ -583,7 +583,7 @@ impl GraphBroker {
                             &mut item_tables[is[0]],
                             ex,
                             num_path,
-                            paths_to_collect.contains(&path_seg),
+                            paths_to_collect.iter().any(|p| path_seg.is_part_of(p))
                         ),
                         b'W' => parse_walk_seq_update_tables_multiple(
                             buf_path_seg,
@@ -591,7 +591,7 @@ impl GraphBroker {
                             &mut item_tables[is[0]],
                             ex,
                             num_path,
-                            paths_to_collect.contains(&path_seg),
+                            paths_to_collect.iter().any(|p| path_seg.is_part_of(p))
                         ),
                         _ => unreachable!(),
                     };
@@ -606,7 +606,7 @@ impl GraphBroker {
                         b'W' => parse_walk_seq_to_item_vec(buf_path_seg, graph_storage),
                         _ => unreachable!(),
                     };
-                    if paths_to_collect.contains(&path_seg) {
+                    if paths_to_collect.iter().any(|p| path_seg.is_part_of(p)) {
                         collected_paths.insert(path_seg.clone(), sids.iter().map(|(i, _)| *i).collect::<Vec<ItemId>>());
                     }
                     let mut exclude_tables_red = exclude_tables.iter_mut().enumerate().filter(|(i, _)| is.contains(i)).map(|(_, e)| e).collect();

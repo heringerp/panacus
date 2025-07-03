@@ -492,6 +492,26 @@ impl PathSegment {
         }
     }
 
+    // Test if path is a more specified version of other (e.g., grch38#0#chrY is a more specified version of grch38#0)
+    pub fn is_part_of(&self, other: &PathSegment) -> bool {
+        if self.sample != other.sample {
+            return false;
+        }
+        if other.haplotype.is_some() && self.haplotype != other.haplotype {
+            return false;
+        }
+        if other.seqid.is_some() && self.seqid != other.seqid {
+            return false;
+        }
+        if other.start.is_some()
+            && other.end.is_some()
+            && (self.start != other.start || self.end != other.end)
+        {
+            return false;
+        }
+        true
+    }
+
     pub fn from_str(s: &str) -> Self {
         let mut res = PathSegment {
             sample: s.to_string(),
