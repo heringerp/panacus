@@ -355,22 +355,38 @@ for (let key in objects.datasets) {
             "description": "Hexbin",
             "data": c.data,
             "width": 1100,
+            "params": [
+                {
+                    "name": "grid",
+                    "select": "interval",
+                    "bind": "scales"
+                }
+            ],
             "mark": {
                 "type": "rect",
-                "width": 2,
-                "clip": true,
-                "tooltip": true,
+                "clip": true
             },
             "encoding": {
                 "x": {
                     "field": "x",
-                    "axis": {"domain": false, "grid": false, "ticks": false, "labels": false},
+                    "type": "quantitative",
+                    "scale": {"nice": false},
+                    "axis": {"domain": false, "grid": false, "ticks": true, "labels": true},
+                    "title": "Position in bps"
+                },
+                "x2": {
+                    "field": "x2",
                 },
                 "color": {
                     "field": "y",
                     "type": "quantitative",
-                    "scale": {"scheme": "yellowgreenblue"}
+                    "scale": {"scheme": "yellowgreenblue"},
+                    "title": c.label
                 },
+                "tooltip": [
+                  {"field": "x", "type": "quantitative", "title": "Position in bps"},
+                  {"field": "y", "type": "quantitative", "title": c.label}
+                ]
             },
             "config": {
                 "axis": {"grid": true, "tickBand": "extent"},

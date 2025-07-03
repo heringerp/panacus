@@ -458,7 +458,8 @@ pub enum ReportItem {
     Chromosomal {
         id: String,
         name: String,
-        values: Vec<(usize, f64)>,
+        label: String,
+        values: HashMap<String, Vec<(usize, usize, f64)>>,
     },
 }
 
@@ -552,7 +553,12 @@ impl ReportItem {
                     )]),
                 ))
             }
-            Self::Chromosomal { id, name, values } => {
+            Self::Chromosomal {
+                id,
+                name,
+                label,
+                values,
+            } => {
                 if !registry.has_template("chromosomal") {
                     registry.register_template_string(
                         "chromosomal",
@@ -561,7 +567,14 @@ impl ReportItem {
                 }
                 let data: Vec<String> = values
                     .into_iter()
-                    .map(|(l, v)| format!("{{ 'x': {}, 'y': {} }}", l, v))
+                    .map(|(k, v)| v.into_iter().map(move |el| (k.clone(), el)))
+                    .flatten()
+                    .map(|(haplo_name, (x, x2, y))| {
+                        format!(
+                            "{{ 'x': {}, 'x2': {}, 'y': {}, 'haplotype_name': '{}' }}",
+                            x, x2, y, haplo_name
+                        )
+                    })
                     .collect();
                 let mut data_text = "{'values': [".to_string();
                 for datum in data {
@@ -569,7 +582,10 @@ impl ReportItem {
                     data_text.push_str(", ");
                 }
                 data_text.push_str("]}");
-                let js_object = format!("new Chromosomal('{}', '{}', {})", id, name, data_text,);
+                let js_object = format!(
+                    "new Chromosomal('{}', '{}', '{}', {})",
+                    id, name, label, data_text,
+                );
                 let data = HashMap::from([("id".to_string(), to_json(&id))]);
                 Ok((
                     registry.render("chromosomal", &data)?,

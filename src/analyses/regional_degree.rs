@@ -62,12 +62,18 @@ impl Analysis for RegionalDegree {
                     / window.iter().map(|(_, l)| l).sum::<usize>() as f64
             })
             .collect();
-        let values: Vec<(usize, f64)> = degrees_of_windows
+        let values: Vec<(usize, usize, f64)> = degrees_of_windows
             .into_iter()
             .enumerate()
-            .map(|(i, v)| (i * window_size, v))
+            .map(|(i, v)| {
+                if i < windows.len() - 1 {
+                    (i * window_size, (i + 2) * window_size, v)
+                } else {
+                    (i * window_size, (i + 1) * window_size, v)
+                }
+            })
             .collect();
-
+        let values = HashMap::from([(self.reference.to_string(), values)]);
         let id_prefix = format!(
             "regional-degree-{}",
             self.get_run_id(gb)
@@ -84,6 +90,7 @@ impl Analysis for RegionalDegree {
             items: vec![ReportItem::Chromosomal {
                 id: format!("{id_prefix}"),
                 name: gb.get_fname(),
+                label: "Average Degree".to_string(),
                 values,
             }],
             plot_downloads: get_default_plot_downloads(),
