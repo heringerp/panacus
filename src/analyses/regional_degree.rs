@@ -8,8 +8,8 @@ use crate::{
 };
 
 use super::{
-    regional_helpers::{get_close_nodes, get_windows},
-    table, Analysis, ConstructibleAnalysis, InputRequirement,
+    regional_helpers::{get_close_nodes, get_ref_length, get_windows},
+    Analysis, ConstructibleAnalysis, InputRequirement,
 };
 
 const NUMBER_OF_WINDOWS: usize = 1000;
@@ -18,6 +18,7 @@ pub struct RegionalDegree {
     reference: PathSegment,
     window_size: usize,
     values: Vec<f64>,
+    ref_len: usize,
 }
 
 impl Analysis for RegionalDegree {
@@ -35,7 +36,11 @@ impl Analysis for RegionalDegree {
                 "{} {} {} {}\n",
                 self.reference.to_string(),
                 i * self.window_size,
-                (i + 1) * self.window_size - 1,
+                if i >= self.values.len() - 1 {
+                    self.ref_len - 1
+                } else {
+                    (i + 1) * self.window_size - 1
+                },
                 *entry
             );
             text.push_str(&line);
@@ -56,10 +61,10 @@ impl Analysis for RegionalDegree {
             .iter()
             .enumerate()
             .map(|(i, v)| {
-                if i < self.values.len() - 1 {
+                if i < self.values.len() - 2 {
                     (i * self.window_size, (i + 2) * self.window_size, *v)
                 } else {
-                    (i * self.window_size, (i + 1) * self.window_size, *v)
+                    (i * self.window_size, self.ref_len - 1, *v)
                 }
             })
             .collect();
@@ -115,6 +120,7 @@ impl ConstructibleAnalysis for RegionalDegree {
             reference: PathSegment::from_str(&reference),
             window_size: 0,
             values: Vec::new(),
+            ref_len: 0,
         }
     }
 }
@@ -162,5 +168,6 @@ impl RegionalDegree {
             .collect();
         self.window_size = window_size;
         self.values = degrees_of_windows;
+        self.ref_len = get_ref_length(ref_nodes, node_lens) as usize;
     }
 }
