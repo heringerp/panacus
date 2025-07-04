@@ -459,7 +459,8 @@ pub enum ReportItem {
         id: String,
         name: String,
         label: String,
-        values: HashMap<String, Vec<(usize, usize, f64)>>,
+        sequence: String,
+        values: Vec<(f64, usize, usize)>,
     },
 }
 
@@ -557,6 +558,7 @@ impl ReportItem {
                 id,
                 name,
                 label,
+                sequence,
                 values,
             } => {
                 if !registry.has_template("chromosomal") {
@@ -565,16 +567,23 @@ impl ReportItem {
                         from_utf8(CHROMOSOMAL_HBS).unwrap(),
                     )?;
                 }
+
+                let mut values = values;
+                for i in 0..values.len() {
+                    if i == values.len() - 1 {
+                        continue;
+                    }
+
+                    // if two following values are continuous
+                    // introduce overlap in plot (avoids gaps due to rounding errors)
+                    if values[i].2 == values[i + 1].1 {
+                        values.get_mut(i).expect("values has value").2 = values[i + 1].2;
+                    }
+                }
+
                 let data: Vec<String> = values
                     .into_iter()
-                    .map(|(k, v)| v.into_iter().map(move |el| (k.clone(), el)))
-                    .flatten()
-                    .map(|(haplo_name, (x, x2, y))| {
-                        format!(
-                            "{{ 'x': {}, 'x2': {}, 'y': {}, 'haplotype_name': '{}' }}",
-                            x, x2, y, haplo_name
-                        )
-                    })
+                    .map(|(y, x, x2)| format!("{{'x': {}, 'x2': {}, 'y': {}}}", x, x2, y))
                     .collect();
                 let mut data_text = "{'values': [".to_string();
                 for datum in data {
@@ -583,8 +592,8 @@ impl ReportItem {
                 }
                 data_text.push_str("]}");
                 let js_object = format!(
-                    "new Chromosomal('{}', '{}', '{}', {})",
-                    id, name, label, data_text,
+                    "new Chromosomal('{}', '{}', '{}', '{}', {})",
+                    id, name, label, sequence, data_text,
                 );
                 let data = HashMap::from([("id".to_string(), to_json(&id))]);
                 Ok((

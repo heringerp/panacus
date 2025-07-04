@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use itertools::Itertools;
+
 use crate::{
     analysis_parameter::AnalysisParameter,
     graph_broker::{GraphBroker, ItemId, PathSegment},
@@ -8,17 +10,16 @@ use crate::{
 };
 
 use super::{
-    regional_helpers::{get_close_nodes, get_ref_length, get_windows},
+    regional_helpers::{get_close_nodes, get_ref_length, get_windows, split_ref_paths},
     Analysis, ConstructibleAnalysis, InputRequirement,
 };
 
 const NUMBER_OF_WINDOWS: usize = 1000;
 
 pub struct RegionalDegree {
-    reference: PathSegment,
+    reference_text: PathSegment,
     window_size: usize,
-    values: Vec<f64>,
-    ref_len: usize,
+    values: HashMap<PathSegment, Vec<(f64, usize, usize)>>,
 }
 
 impl Analysis for RegionalDegree {
@@ -31,19 +32,11 @@ impl Analysis for RegionalDegree {
             self.set_values(gb);
         }
         let mut text = format!("track type=bedGraph name=\"Panacus Degree\" description=\"Average degree for a window of bps\" visibility=full color=200,100,0 priority=20\n");
-        for (i, entry) in self.values.iter().enumerate() {
-            let line = format!(
-                "{} {} {} {}\n",
-                self.reference.to_string(),
-                i * self.window_size,
-                if i >= self.values.len() - 1 {
-                    self.ref_len - 1
-                } else {
-                    (i + 1) * self.window_size - 1
-                },
-                *entry
-            );
-            text.push_str(&line);
+        for (sequence_id, sequence) in &self.values {
+            for (degree, start, end) in sequence {
+                let line = format!("{} {} {} {}\n", sequence_id.to_string(), start, end, degree,);
+                text.push_str(&line);
+            }
         }
         Ok(text)
     }
@@ -56,25 +49,23 @@ impl Analysis for RegionalDegree {
         if self.values.is_empty() {
             self.set_values(gb);
         }
-        let values: Vec<(usize, usize, f64)> = self
-            .values
-            .iter()
-            .enumerate()
-            .map(|(i, v)| {
-                if i < self.values.len() - 2 {
-                    (i * self.window_size, (i + 2) * self.window_size, *v)
-                } else {
-                    (i * self.window_size, self.ref_len - 1, *v)
-                }
-            })
-            .collect();
-        let values = HashMap::from([(self.reference.to_string(), values)]);
         let id_prefix = format!(
             "regional-degree-{}",
             self.get_run_id(gb)
                 .to_lowercase()
                 .replace(&[' ', '|', '\\'], "-")
         );
+        let all_values = self.values.clone();
+        let items: Vec<ReportItem> = all_values
+            .into_iter()
+            .map(|(sequence, values)| ReportItem::Chromosomal {
+                id: format!("{id_prefix}-{}", sequence.to_string()),
+                name: gb.get_fname(),
+                label: "Average Degree".to_string(),
+                sequence: sequence.to_string(),
+                values,
+            })
+            .collect();
         let table_text = self.generate_table(Some(gb))?;
         let table_text = format!("`{}`", table_text);
         let regional_degree_tabs = vec![AnalysisSection {
@@ -84,12 +75,7 @@ impl Analysis for RegionalDegree {
             run_name: self.get_run_name(gb),
             run_id: self.get_run_id(gb),
             countable: "Degree".to_string(),
-            items: vec![ReportItem::Chromosomal {
-                id: format!("{id_prefix}"),
-                name: gb.get_fname(),
-                label: "Average Degree".to_string(),
-                values,
-            }],
+            items,
             plot_downloads: get_default_plot_downloads(),
         }];
         Ok(regional_degree_tabs)
@@ -101,7 +87,7 @@ impl Analysis for RegionalDegree {
             InputRequirement::Bp,
             InputRequirement::Edge,
             InputRequirement::Hist,
-            InputRequirement::Path(self.reference.clone()),
+            InputRequirement::Path(self.reference_text.clone()),
         ])
     }
 
@@ -112,15 +98,17 @@ impl Analysis for RegionalDegree {
 
 impl ConstructibleAnalysis for RegionalDegree {
     fn from_parameter(parameter: crate::analysis_parameter::AnalysisParameter) -> Self {
-        let reference = match parameter {
-            AnalysisParameter::RegionalDegree { reference } => reference,
+        let (reference, window_size) = match parameter {
+            AnalysisParameter::RegionalDegree {
+                reference,
+                window_size,
+            } => (reference, window_size),
             _ => panic!("Regional degree should only be called with correct parameter"),
         };
         Self {
-            reference: PathSegment::from_str(&reference),
-            window_size: 0,
-            values: Vec::new(),
-            ref_len: 0,
+            reference_text: PathSegment::from_str(&reference),
+            window_size,
+            values: HashMap::new(),
         }
     }
 }
@@ -144,30 +132,50 @@ impl RegionalDegree {
                 acc.entry(k).and_modify(|x| x.push(v)).or_insert(vec![v]);
                 acc
             });
-        let ref_nodes = gb.get_path(&self.reference);
-        let close_ones_of_ref = get_close_nodes(ref_nodes, &neighbors);
+        let ref_paths = gb.get_all_matchings_paths(&self.reference_text);
+        let ref_paths = split_ref_paths(ref_paths);
         let node_lens = gb.get_node_lens();
-        let (windows, window_size) = get_windows(ref_nodes, node_lens, NUMBER_OF_WINDOWS);
         let degrees = gb.get_degree();
-        let degrees_of_windows: Vec<f64> = windows
-            .iter()
-            .map(|window| {
-                window
+        let all_ref_nodes = ref_paths
+            .values()
+            .flat_map(|m| m.values().flat_map(|vec_ref| vec_ref.iter().cloned()))
+            .unique()
+            .collect::<Vec<_>>();
+        let close_ones_of_ref = get_close_nodes(&all_ref_nodes, &neighbors);
+        let mut all_degrees_of_windows: HashMap<PathSegment, Vec<(f64, usize, usize)>> =
+            HashMap::new();
+        for (sequence_id, sequence) in ref_paths {
+            for (contig_id, contig) in sequence {
+                let windows = get_windows(contig, node_lens, self.window_size);
+                let contig_start = contig_id.start.unwrap_or_default();
+                let degrees_of_windows: Vec<(f64, usize, usize)> = windows
                     .iter()
-                    .map(|(node, l)| {
-                        *l as f64
-                            * (close_ones_of_ref[node]
+                    .map(|(window, start, end)| {
+                        (
+                            window
                                 .iter()
-                                .map(|current_node| degrees[current_node.0 as usize])
-                                .sum::<u32>() as f64
-                                / close_ones_of_ref[node].len() as f64)
+                                .map(|(node, l)| {
+                                    *l as f64
+                                        * (close_ones_of_ref[node]
+                                            .iter()
+                                            .map(|current_node| degrees[current_node.0 as usize])
+                                            .sum::<u32>()
+                                            as f64
+                                            / close_ones_of_ref[node].len() as f64)
+                                })
+                                .sum::<f64>()
+                                / window.iter().map(|(_, l)| l).sum::<usize>() as f64,
+                            *start + contig_start,
+                            *end + contig_start,
+                        )
                     })
-                    .sum::<f64>()
-                    / window.iter().map(|(_, l)| l).sum::<usize>() as f64
-            })
-            .collect();
-        self.window_size = window_size;
-        self.values = degrees_of_windows;
-        self.ref_len = get_ref_length(ref_nodes, node_lens) as usize;
+                    .collect();
+                all_degrees_of_windows
+                    .entry(sequence_id.clone())
+                    .or_default()
+                    .extend(degrees_of_windows);
+            }
+        }
+        self.values = all_degrees_of_windows;
     }
 }

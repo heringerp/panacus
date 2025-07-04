@@ -1,6 +1,9 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    sync::LockResult,
+};
 
-use crate::graph_broker::ItemId;
+use crate::graph_broker::{ItemId, PathSegment};
 
 pub fn get_close_nodes(
     ref_nodes: &Vec<ItemId>,
@@ -41,18 +44,27 @@ pub fn get_ref_length(ref_nodes: &Vec<ItemId>, node_lens: &Vec<u32>) -> u32 {
     length
 }
 
+pub fn split_ref_paths<'a>(
+    ref_paths: HashMap<PathSegment, &'a Vec<ItemId>>,
+) -> HashMap<PathSegment, HashMap<PathSegment, &'a Vec<ItemId>>> {
+    let mut result: HashMap<PathSegment, HashMap<PathSegment, &Vec<ItemId>>> = HashMap::new();
+    for (path, path_content) in ref_paths {
+        let coord_less_path = path.clear_coords();
+        result
+            .entry(coord_less_path)
+            .or_default()
+            .insert(path, path_content);
+    }
+    result
+}
+
 pub fn get_windows(
     ref_nodes: &Vec<ItemId>,
     node_lens: &Vec<u32>,
-    number_of_windows: usize,
-) -> (Vec<Vec<(ItemId, usize)>>, usize) {
+    window_size: usize,
+) -> Vec<(Vec<(ItemId, usize)>, usize, usize)> {
     let ref_length = get_ref_length(ref_nodes, node_lens) as usize;
-    let window_size = ref_length as usize / number_of_windows;
-    let window_size = if window_size * number_of_windows == ref_length as usize {
-        window_size
-    } else {
-        window_size + 1 // Add 1 to make last window uncomplete/total number stay at number_of_windows
-    };
+    let number_of_windows = ref_length.div_ceil(window_size);
     let mut windows: Vec<Vec<(ItemId, usize)>> = vec![Vec::new(); number_of_windows];
     let mut bp_counter = 0;
     let mut current_window_index = 0;
@@ -82,5 +94,19 @@ pub fn get_windows(
             already_used_bps_of_node += cut_node_length;
         };
     }
-    (windows, window_size)
+    windows
+        .into_iter()
+        .enumerate()
+        .map(|(i, window)| {
+            (
+                window,
+                i * window_size,
+                if i < number_of_windows - 1 {
+                    (i + 1) * window_size
+                } else {
+                    bp_counter
+                },
+            )
+        })
+        .collect()
 }

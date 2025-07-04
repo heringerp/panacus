@@ -349,6 +349,19 @@ impl GraphBroker {
         &self.paths[path_seg]
     }
 
+    pub fn get_all_matchings_paths(
+        &self,
+        path_seg: &PathSegment,
+    ) -> HashMap<PathSegment, &Vec<ItemId>> {
+        let mut result = HashMap::new();
+        for path in self.paths.keys() {
+            if path.is_part_of(path_seg) {
+                result.insert(path.clone(), &self.paths[path]);
+            }
+        }
+        result
+    }
+
     pub fn write_abacus_by_group<W: Write>(
         &self,
         total: bool,

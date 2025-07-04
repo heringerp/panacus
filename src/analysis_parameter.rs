@@ -201,6 +201,8 @@ pub enum AnalysisParameter {
     },
     RegionalDegree {
         reference: String,
+        #[serde(default = "get_window_size")]
+        window_size: usize,
     },
 }
 
@@ -223,6 +225,10 @@ impl Display for Grouping {
 
 fn get_radius() -> u32 {
     20
+}
+
+fn get_window_size() -> usize {
+    1_000_000
 }
 
 impl AnalysisParameter {

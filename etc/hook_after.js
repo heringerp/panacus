@@ -366,11 +366,15 @@ for (let key in objects.datasets) {
                 "type": "rect",
                 "clip": true
             },
+            "title": {
+                "text": c.sequence,
+                "anchor": "start"
+            },
             "encoding": {
                 "x": {
                     "field": "x",
                     "type": "quantitative",
-                    "scale": {"nice": false},
+                    "scale": {"nice": false, "zero": false},
                     "axis": {"domain": false, "grid": false, "ticks": true, "labels": true},
                     "title": "Position in bps"
                 },
