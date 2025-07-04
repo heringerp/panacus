@@ -191,6 +191,17 @@ for (let key in objects.datasets) {
             data: m.data,
             layer: [
                 {
+                    "params": [
+                        {
+                          "name": "toggle-curves",
+                          "bind": "legend",
+                          "select": {
+                            "type": "point",
+                            "toggle": "true",
+                            "fields": ["name"]
+                          }
+                        }
+                    ],
                     mark: {"type": 'bar', "tooltip": {"content": "data"}},
                     encoding: {
                         x: {field: 'label', type: 'ordinal', title: m.x_label, sort: null},
@@ -206,6 +217,10 @@ for (let key in objects.datasets) {
                                 "range": ['#f77189', '#bb9832', '#50b131', '#36ada4', '#3ba3ec', '#e866f4']
                             }
                         },
+                        "opacity": {
+                            "condition": {"param": "toggle-curves", "value": 1},
+                            "value": 0.2
+                        }
                     },
                 },
             ]
