@@ -18,7 +18,7 @@ use util::{
     update_tables_edgecount, update_tables_multiple,
 };
 
-use crate::util::{intersects, is_contained, ActiveTable, IntervalContainer, ItemTable};
+use crate::util::{intersects, is_contained, ActiveTable, IntervalContainer, ItemTable, Threshold};
 use crate::{
     analyses::InputRequirement as Req, analysis_parameter::Grouping,
     io::bufreader_from_compressed_gfa, util::CountType,
@@ -343,6 +343,14 @@ impl GraphBroker {
     pub fn get_abacus_by_total(&self, count: CountType) -> &AbacusByTotal {
         Self::check_and_error(self.total_abaci.as_ref(), "abacus_by_group");
         &self.total_abaci.as_ref().unwrap()[&count]
+    }
+
+    pub fn get_growth_for_subset(&self, count: CountType, indices: &Vec<usize>) -> Vec<f64> {
+        let abacus = self.get_abacus_by_total(count);
+        let hist = Hist::from_abacus_for_window(abacus, self.graph_aux.as_ref(), indices, None);
+        let cov = Threshold::Absolute(1);
+        let growth = hist.calc_growth_union(&cov);
+        growth
     }
 
     pub fn get_path(&self, path_seg: &PathSegment) -> &Vec<ItemId> {

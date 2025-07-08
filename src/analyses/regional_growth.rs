@@ -1,0 +1,205 @@
+use std::collections::{HashMap, HashSet};
+
+use itertools::Itertools;
+use ml_helpers::linear_regression::huber_regressor::HuberRegressor;
+
+use crate::{
+    analysis_parameter::AnalysisParameter,
+    graph_broker::{GraphBroker, Hist, ItemId, PathSegment},
+    html_report::{AnalysisSection, ReportItem},
+    util::{get_default_plot_downloads, CountType},
+};
+
+use super::{
+    regional_helpers::{get_close_nodes, get_windows, split_ref_paths},
+    Analysis, ConstructibleAnalysis, InputRequirement,
+};
+
+pub struct RegionalGrowth {
+    reference_text: PathSegment,
+    window_size: usize,
+    count_type: CountType,
+    values: HashMap<PathSegment, Vec<(f64, usize, usize)>>,
+}
+
+impl Analysis for RegionalGrowth {
+    fn generate_table(
+        &mut self,
+        gb: Option<&crate::graph_broker::GraphBroker>,
+    ) -> anyhow::Result<String> {
+        let gb = gb.expect("Regional degree should always have a graph");
+        if self.values.is_empty() {
+            self.set_values(gb);
+        }
+        let mut text = format!("track type=bedGraph name=\"Panacus Degree\" description=\"Average degree for a window of bps\" visibility=full color=200,100,0 priority=20\n");
+        for (sequence_id, sequence) in &self.values {
+            for (degree, start, end) in sequence {
+                let line = format!("{} {} {} {}\n", sequence_id.to_string(), start, end, degree,);
+                text.push_str(&line);
+            }
+        }
+        Ok(text)
+    }
+
+    fn generate_report_section(
+        &mut self,
+        gb: Option<&crate::graph_broker::GraphBroker>,
+    ) -> anyhow::Result<Vec<crate::html_report::AnalysisSection>> {
+        let gb = gb.expect("Regional degree should always have a graph");
+        if self.values.is_empty() {
+            self.set_values(gb);
+        }
+        let id_prefix = format!(
+            "regional-degree-{}",
+            self.get_run_id(gb)
+                .to_lowercase()
+                .replace(&[' ', '|', '\\'], "-")
+        );
+        let all_values = self.values.clone();
+        let items: Vec<ReportItem> = all_values
+            .into_iter()
+            .map(|(sequence, values)| ReportItem::Chromosomal {
+                id: format!("{id_prefix}-{}", sequence.to_string()),
+                name: gb.get_fname(),
+                label: "Average Degree".to_string(),
+                sequence: sequence.to_string(),
+                values,
+            })
+            .collect();
+        let table_text = self.generate_table(Some(gb))?;
+        let table_text = format!("`{}`", table_text);
+        let regional_degree_tabs = vec![AnalysisSection {
+            id: format!("{id_prefix}"),
+            analysis: "Regional".to_string(),
+            table: Some(table_text),
+            run_name: self.get_run_name(gb),
+            run_id: self.get_run_id(gb),
+            countable: "Degree".to_string(),
+            items,
+            plot_downloads: get_default_plot_downloads(),
+        }];
+        Ok(regional_degree_tabs)
+    }
+
+    fn get_graph_requirements(&self) -> std::collections::HashSet<super::InputRequirement> {
+        let mut req = HashSet::from([
+            InputRequirement::Hist,
+            InputRequirement::Bp,
+            InputRequirement::Path(self.reference_text.clone()),
+        ]);
+        req.extend(InputRequirement::from_count(self.count_type).into_iter());
+        req
+    }
+
+    fn get_type(&self) -> String {
+        "RegionalDegree".to_string()
+    }
+}
+
+impl ConstructibleAnalysis for RegionalGrowth {
+    fn from_parameter(parameter: crate::analysis_parameter::AnalysisParameter) -> Self {
+        let (reference, window_size, count_type) = match parameter {
+            AnalysisParameter::RegionalGrowth {
+                reference,
+                window_size,
+                count_type,
+            } => (reference, window_size, count_type),
+            _ => panic!("Regional degree should only be called with correct parameter"),
+        };
+        Self {
+            reference_text: PathSegment::from_str(&reference),
+            count_type,
+            window_size,
+            values: HashMap::new(),
+        }
+    }
+}
+
+impl RegionalGrowth {
+    fn get_run_name(&self, gb: &GraphBroker) -> String {
+        format!("{}", gb.get_run_name())
+    }
+
+    fn get_run_id(&self, gb: &GraphBroker) -> String {
+        format!("{}-coverageline", gb.get_run_id())
+    }
+
+    fn set_values(&mut self, gb: &GraphBroker) {
+        let edge2id = gb.get_edges();
+        let neighbors: HashMap<ItemId, Vec<ItemId>> = edge2id
+            .keys()
+            .map(|x| (x.0, x.2))
+            .chain(edge2id.keys().map(|x| (x.2, x.0)))
+            .fold(HashMap::new(), |mut acc, (k, v)| {
+                acc.entry(k).and_modify(|x| x.push(v)).or_insert(vec![v]);
+                acc
+            });
+        let ref_paths = gb.get_all_matchings_paths(&self.reference_text);
+        let ref_paths = split_ref_paths(ref_paths);
+        let node_lens = gb.get_node_lens();
+        let degrees = gb.get_degree();
+        let all_ref_nodes = ref_paths
+            .values()
+            .flat_map(|m| m.values().flat_map(|vec_ref| vec_ref.iter().cloned()))
+            .unique()
+            .collect::<Vec<_>>();
+        let close_ones_of_ref = get_close_nodes(&all_ref_nodes, &neighbors);
+        let mut all_degrees_of_windows: HashMap<PathSegment, Vec<(f64, usize, usize)>> =
+            HashMap::new();
+        for (sequence_id, sequence) in ref_paths {
+            for (contig_id, contig) in sequence {
+                let windows = get_windows(contig, node_lens, self.window_size);
+                let contig_start = contig_id.start.unwrap_or_default();
+                let degrees_of_windows: Vec<(f64, usize, usize)> = windows
+                    .iter()
+                    .map(|(window, start, end)| {
+                        (
+                            {
+                                let indeces: Vec<usize> =
+                                    window.iter().map(|idx| idx.0 .0 as usize).collect();
+                                let growth = gb.get_growth_for_subset(self.count_type, &indeces);
+                                eprintln!("growth: {:?}", growth);
+                                let x: Vec<f64> = (1..=growth.len())
+                                    .map(|x| (x as f64).log10())
+                                    .map(|x| {
+                                        if x.is_infinite() && x.is_sign_negative() {
+                                            -1000.0
+                                        } else {
+                                            x
+                                        }
+                                    })
+                                    .collect();
+                                let y: Vec<f64> = vec![0.0]
+                                    .into_iter()
+                                    .chain(growth.into_iter())
+                                    .tuple_windows()
+                                    .map(|(x_prev, x_curr)| (x_curr - x_prev).log10())
+                                    .map(|x| {
+                                        if x.is_infinite() && x.is_sign_negative() {
+                                            -1000.0
+                                        } else {
+                                            x
+                                        }
+                                    })
+                                    .collect();
+                                eprintln!("\tx: {:?}", x);
+                                eprintln!("\ty: {:?}", y);
+                                let mut reg = HuberRegressor::new();
+                                reg.fit(x, y);
+                                let params = reg.get_params().expect("Params have been fitted");
+                                params.0
+                            },
+                            *start + contig_start,
+                            *end + contig_start,
+                        )
+                    })
+                    .collect();
+                all_degrees_of_windows
+                    .entry(sequence_id.clone())
+                    .or_default()
+                    .extend(degrees_of_windows);
+            }
+        }
+        self.values = all_degrees_of_windows;
+    }
+}

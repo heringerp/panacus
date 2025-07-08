@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 /* standard use */
 use std::io::Write;
 use std::io::{Error, ErrorKind};
@@ -36,6 +37,28 @@ pub fn choose(n: usize, k: usize) -> f64 {
 }
 
 impl Hist {
+    pub fn from_abacus_for_window(
+        abacus: &AbacusByTotal,
+        graph_storage: Option<&GraphStorage>,
+        indices: &Vec<usize>,
+        uncovered_bps: Option<HashMap<u64, usize>>,
+    ) -> Self {
+        Self {
+            count: abacus.count,
+            coverage: match abacus.count {
+                CountType::Node | CountType::Edge => abacus.construct_hist_from_set(indices),
+                CountType::Bp => abacus.construct_hist_bps_of_subset(
+                    graph_storage.expect("Graph storage is needed for Bps hist"),
+                    indices,
+                    uncovered_bps.expect("Uncovered Bps is needed for Bps hist"),
+                ),
+                CountType::All => unreachable!(
+                    "Inadmissable count type; all should not be used for calculating window hist"
+                ),
+            },
+        }
+    }
+
     pub fn from_abacus(abacus: &AbacusByTotal, graph_aux: Option<&GraphStorage>) -> Self {
         Self {
             count: abacus.count,

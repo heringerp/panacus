@@ -7,6 +7,7 @@ use strum_macros::{EnumIter, EnumString, EnumVariantNames};
 use serde::{Deserialize, Serialize};
 
 use crate::analyses::regional_degree::RegionalDegree;
+use crate::analyses::regional_growth::RegionalGrowth;
 use crate::analyses::ConstructibleAnalysis;
 use crate::analyses::{
     coverage_line::CoverageLine, growth::Growth, info::Info, node_distribution::NodeDistribution,
@@ -204,6 +205,13 @@ pub enum AnalysisParameter {
         #[serde(default = "get_window_size")]
         window_size: usize,
     },
+    RegionalGrowth {
+        reference: String,
+        #[serde(default = "get_window_size")]
+        window_size: usize,
+        #[serde(default)]
+        count_type: CountType,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
@@ -263,6 +271,9 @@ impl AnalysisParameter {
             }
             r @ Self::RegionalDegree { .. } => {
                 get_analysis_task!(RegionalDegree, r)
+            }
+            r @ Self::RegionalGrowth { .. } => {
+                get_analysis_task!(RegionalGrowth, r)
             }
             Self::Custom { name, file } => {
                 (vec![Task::CustomSection { name, file }], HashSet::new())

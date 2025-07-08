@@ -762,6 +762,22 @@ impl AbacusByTotal {
         }
     }
 
+    pub fn construct_hist_from_set(&self, indices: &Vec<usize>) -> Vec<usize> {
+        log::debug!("constructing histogram..");
+        let mut hist: Vec<usize> = vec![0; indices.len() + 1];
+
+        for (i, cov) in indices.iter().map(|&idx| self.countable[idx]).enumerate() {
+            if cov as usize >= hist.len() {
+                if i != 0 {
+                    log::warn!("coverage {} of item {} exceeds the number of groups {}, it'll be ignored in the count", cov, i, self.groups.len());
+                }
+            } else {
+                hist[cov as usize] += 1;
+            }
+        }
+        hist
+    }
+
     pub fn construct_hist(&self) -> Vec<usize> {
         log::info!("constructing histogram..");
         // hist must be of size = num_groups + 1; having an index that starts
@@ -776,6 +792,31 @@ impl AbacusByTotal {
             } else {
                 hist[*cov as usize] += 1;
             }
+        }
+        hist
+    }
+
+    pub fn construct_hist_bps_of_subset(
+        &self,
+        graph_storage: &GraphStorage,
+        indices: &Vec<usize>,
+        uncovered_bps: HashMap<u64, usize>,
+    ) -> Vec<usize> {
+        log::debug!("constructing bp histogram..");
+        let mut hist: Vec<usize> = vec![0; indices.len() + 1];
+        for (id, cov) in indices.iter().map(|&idx| (idx, self.countable[idx])) {
+            if cov as usize >= hist.len() {
+                if id != 0 {
+                    log::info!("coverage {} of item {} exceeds the number of groups {}, it'll be ignored in the count", cov, id, self.groups.len());
+                }
+            } else {
+                hist[cov as usize] += graph_storage.node_lens[id] as usize;
+            }
+        }
+        for (id, uncov) in uncovered_bps.iter() {
+            hist[self.countable[*id as usize] as usize] -= uncov;
+            // add uncovered bps to 0-coverage count
+            // hist[0] += uncov;
         }
         hist
     }

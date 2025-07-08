@@ -5,6 +5,7 @@ pub mod info;
 pub mod node_distribution;
 pub mod ordered_histgrowth;
 pub mod regional_degree;
+pub mod regional_growth;
 pub mod regional_helpers;
 pub mod similarity;
 pub mod table;
@@ -42,4 +43,19 @@ pub enum InputRequirement {
     AbacusByGroup(CountType),
     Graph(String),
     Path(PathSegment),
+}
+
+impl InputRequirement {
+    pub fn from_count(count: CountType) -> HashSet<Self> {
+        match count {
+            CountType::Bp => HashSet::from([InputRequirement::Bp]),
+            CountType::Node => HashSet::from([InputRequirement::Node]),
+            CountType::Edge => HashSet::from([InputRequirement::Edge]),
+            CountType::All => HashSet::from([
+                InputRequirement::Bp,
+                InputRequirement::Node,
+                InputRequirement::Edge,
+            ]),
+        }
+    }
 }
