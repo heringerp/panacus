@@ -1,9 +1,6 @@
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    sync::LockResult,
-};
+use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::graph_broker::{ItemId, PathSegment};
+use crate::graph_broker::{Edge, ItemId, PathSegment};
 
 pub fn get_close_nodes(
     ref_nodes: &Vec<ItemId>,
@@ -35,6 +32,38 @@ pub fn get_close_nodes(
     }
     flipped
 }
+
+// pub fn get_close_nodes_with_edges(
+//     ref_nodes: &Vec<ItemId>,
+//     neighbors: &HashMap<ItemId, Vec<ItemId>>,
+//     edges: &HashMap<Edge, ItemId>,
+// ) -> HashMap<ItemId, Vec<ItemId>> {
+//     let mut queue: VecDeque<ItemId> = VecDeque::new();
+//     let mut closest_ref: HashMap<ItemId, (ItemId, ItemId)> = HashMap::new();
+//     let ref_node_set: HashSet<ItemId> = ref_nodes.iter().copied().collect();
+//     for ref_node in ref_nodes {
+//         closest_ref.insert(*ref_node, *ref_node);
+//         for neighbor in neighbors.get(ref_node).unwrap_or(&Vec::new()) {
+//             if !ref_node_set.contains(neighbor) && !closest_ref.contains_key(neighbor) {
+//                 closest_ref.insert(*neighbor, *ref_node);
+//                 queue.push_front(*neighbor);
+//             }
+//         }
+//     }
+//     while let Some(current_node) = queue.pop_back() {
+//         for neighbor in neighbors.get(&current_node).unwrap_or(&Vec::new()) {
+//             if !closest_ref.contains_key(neighbor) {
+//                 closest_ref.insert(*neighbor, current_node);
+//                 queue.push_front(*neighbor);
+//             }
+//         }
+//     }
+//     let mut flipped: HashMap<ItemId, Vec<ItemId>> = HashMap::new();
+//     for (entry_node, ref_node) in closest_ref {
+//         flipped.entry(ref_node).or_default().push(entry_node);
+//     }
+//     flipped
+// }
 
 pub fn get_ref_length(ref_nodes: &Vec<ItemId>, node_lens: &Vec<u32>) -> u32 {
     let length = ref_nodes
