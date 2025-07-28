@@ -3,14 +3,13 @@ use std::fs;
 use std::io::{BufReader, BufWriter, Write};
 use std::io::{Error, ErrorKind};
 use std::iter::FromIterator;
-use std::mem::take;
 use std::path::Path;
 //use std::sync::{Arc, Mutex};
 
 /* external crate*/
 use itertools::Itertools;
 use regex::Regex;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 
 use crate::graph_broker::graph::{Edge, ItemId, Orientation};
 /* private use */
@@ -522,10 +521,10 @@ impl AbacusByTotal {
     }
 
     pub fn from_gfa_multiple<R: std::io::Read>(
-        data: &mut BufReader<R>,
-        graph_mask: &GraphMask,
-        graph_storage: &GraphStorage,
-        count_types: &Vec<CountType>,
+        _data: &mut BufReader<R>,
+        _graph_mask: &GraphMask,
+        _graph_storage: &GraphStorage,
+        _count_types: &Vec<CountType>,
     ) -> (Vec<AbacusByTotal>, HashMap<PathSegment, (u32, u32)>) {
         //let (item_tables, exclude_tables, mut subset_covered_bps, path_lens) =
         //    parse_gfa_paths_walks_multiple(data, graph_mask, graph_storage, count_types);

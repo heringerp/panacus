@@ -6,13 +6,13 @@ use ml_helpers::linear_regression::huber_regressor::{solve, HuberRegressor};
 
 use crate::{
     analysis_parameter::AnalysisParameter,
-    graph_broker::{GraphBroker, ItemId, PathSegment},
+    graph_broker::{GraphBroker, ItemId, Orientation, PathSegment},
     html_report::{AnalysisSection, ReportItem},
     util::{get_default_plot_downloads, CountType},
 };
 
 use super::{
-    regional_helpers::{get_close_nodes, get_windows, split_ref_paths},
+    regional_helpers::{get_windows, split_ref_paths},
     Analysis, ConstructibleAnalysis, InputRequirement,
 };
 
@@ -127,39 +127,29 @@ impl RegionalGrowth {
 
     fn set_values(&mut self, gb: &GraphBroker) {
         let edge2id = gb.get_edges();
-        let neighbors: HashMap<ItemId, Vec<ItemId>> = edge2id
+        let neighbors: HashMap<(ItemId, Orientation), HashSet<ItemId>> = edge2id
             .keys()
-            .map(|x| (x.0, x.2))
-            .chain(edge2id.keys().map(|x| (x.2, x.0)))
+            .flat_map(|x| [((x.0, x.1), x.2), ((x.2, x.3), x.0)])
             .fold(HashMap::new(), |mut acc, (k, v)| {
-                acc.entry(k).and_modify(|x| x.push(v)).or_insert(vec![v]);
+                acc.entry(k).or_default().insert(v);
                 acc
             });
         let ref_paths = gb.get_all_matchings_paths(&self.reference_text);
         let ref_paths = split_ref_paths(ref_paths);
         let node_lens = gb.get_node_lens();
-        let all_ref_nodes = ref_paths
-            .values()
-            .flat_map(|m| m.values().flat_map(|vec_ref| vec_ref.iter().cloned()))
-            .unique()
-            .collect::<Vec<_>>();
-        let close_ones_of_ref = get_close_nodes(&all_ref_nodes, &neighbors);
         let mut all_growths_of_windows: HashMap<PathSegment, Vec<(f64, usize, usize)>> =
             HashMap::new();
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
-                let windows = get_windows(contig, node_lens, self.window_size);
+                let windows = get_windows(contig, node_lens, self.window_size, &neighbors);
                 let contig_start = contig_id.start.unwrap_or_default();
                 let growths_of_windows: Vec<(f64, usize, usize)> = windows
                     .par_iter()
                     .map(|(window, start, end)| {
                         (
                             {
-                                let indeces: Vec<usize> = window
-                                    .iter()
-                                    .flat_map(|&idx| close_ones_of_ref[&idx.0].iter().copied())
-                                    .map(|idx| idx.0 as usize)
-                                    .collect();
+                                let indeces: Vec<usize> =
+                                    window.iter().map(|(idx, _)| idx.0 as usize).collect();
                                 let growth = gb.get_growth_for_subset(self.count_type, &indeces);
                                 let x: Vec<f64> = (1..=growth.len())
                                     .map(|x| (x as f64).log10())

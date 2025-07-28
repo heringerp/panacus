@@ -670,7 +670,7 @@ pub fn parse_walk_seq_update_tables_multiple(
     exclude_tables: Vec<&mut Option<ActiveTable>>,
     num_path: usize,
     should_keep_path: bool,
-) -> (u32, u32, Option<Vec<ItemId>>) {
+) -> (u32, u32, Option<Vec<(ItemId, Orientation)>>) {
     // later codes assumes that data is non-empty...
     if data.is_empty() {
         return (0, 0, None);
@@ -683,7 +683,8 @@ pub fn parse_walk_seq_update_tables_multiple(
 
     log::debug!("parsing walk sequences of size {}..", end);
 
-    let (segment_ids, bp_len) = get_walk_segment_ids(data, graph_storage, end, CHUNK_SIZE);
+    let (segment_ids, bp_len) =
+        get_walk_segment_ids_with_orientation(data, graph_storage, end, CHUNK_SIZE);
 
     let path_sequence = match should_keep_path {
         true => Some(segment_ids.clone()),
@@ -691,7 +692,7 @@ pub fn parse_walk_seq_update_tables_multiple(
     };
 
     segment_ids.into_iter().for_each(|segment_id| {
-        item_table.items.push(segment_id.0);
+        item_table.items.push(segment_id.0 .0);
         item_table.id_prefsum[num_path + 1] += 1;
     });
 
@@ -850,6 +851,25 @@ fn get_segment_id(node: &[u8], graph_storage: &GraphStorage) -> ItemId {
     segment_id
 }
 
+fn get_segment_id_with_orientation(
+    node: &[u8],
+    graph_storage: &GraphStorage,
+) -> (ItemId, Orientation) {
+    let segment_id = graph_storage
+        .get_node_id(&node[0..node.len() - 1])
+        .unwrap_or_else(|| panic!("unknown node {}", str::from_utf8(node).unwrap()));
+    // TODO: Is orientation really necessary?
+    let orientation = node[node.len() - 1];
+    assert!(
+        orientation == b'-' || orientation == b'+',
+        "unknown orientation of segment {}",
+        str::from_utf8(node).unwrap()
+    );
+    let orientation = Orientation::from_pm(orientation);
+    //plus_strands[rayon::current_thread_index().unwrap()] += (orientation == b'+') as u32;
+    (segment_id, orientation)
+}
+
 fn get_walk_segment_id(node: &[u8], graph_storage: &GraphStorage) -> ItemId {
     let segment_id = graph_storage
         .get_node_id(&node[1..node.len()])
@@ -865,12 +885,30 @@ fn get_walk_segment_id(node: &[u8], graph_storage: &GraphStorage) -> ItemId {
     segment_id
 }
 
-fn get_walk_segment_ids(
+fn get_walk_segment_id_with_orientation(
+    node: &[u8],
+    graph_storage: &GraphStorage,
+) -> (ItemId, Orientation) {
+    let segment_id = graph_storage
+        .get_node_id(&node[1..node.len()])
+        .unwrap_or_else(|| panic!("unknown node {}", str::from_utf8(node).unwrap()));
+    // TODO: Is orientation really necessary?
+    let orientation = node[0];
+    assert!(
+        orientation == b'<' || orientation == b'>',
+        "unknown orientation of segment {}",
+        str::from_utf8(node).unwrap()
+    );
+    //plus_strands[rayon::current_thread_index().unwrap()] += (orientation == b'+') as u32;
+    (segment_id, Orientation::from_lg(orientation))
+}
+
+fn get_walk_segment_ids_with_orientation(
     data: &[u8],
     graph_storage: &GraphStorage,
     end: usize,
     chunk_size: usize,
-) -> (Vec<ItemId>, u32) {
+) -> (Vec<(ItemId, Orientation)>, u32) {
     let (segment_ids, bp_lens): (Vec<_>, Vec<_>) = (0..end)
         .step_by(chunk_size)
         .map(|chunk_start| {
@@ -895,8 +933,11 @@ fn get_walk_segment_ids(
                 if curr_pos >= segment_end {
                     break;
                 }
-                let segment_id = get_walk_segment_id(&data[curr_pos..segment_end], graph_storage);
-                bp_len += graph_storage.node_len(&segment_id);
+                let segment_id = get_walk_segment_id_with_orientation(
+                    &data[curr_pos..segment_end],
+                    graph_storage,
+                );
+                bp_len += graph_storage.node_len(&segment_id.0);
                 segment_ids.push(segment_id);
                 // move curr_pos forward (after next comma)
                 curr_pos = segment_end;
@@ -910,12 +951,12 @@ fn get_walk_segment_ids(
     (segment_ids, bp_len)
 }
 
-fn get_path_segment_ids(
+fn get_path_segment_ids_with_orientation(
     data: &[u8],
     graph_storage: &GraphStorage,
     end: usize,
     chunk_size: usize,
-) -> (Vec<ItemId>, u32) {
+) -> (Vec<(ItemId, Orientation)>, u32) {
     let (segment_ids, bp_lens): (Vec<_>, Vec<_>) = (0..end)
         .into_par_iter()
         .step_by(chunk_size)
@@ -945,8 +986,9 @@ fn get_path_segment_ids(
                 if curr_pos >= segment_end {
                     break;
                 }
-                let segment_id = get_segment_id(&data[curr_pos..segment_end], graph_storage);
-                bp_len += graph_storage.node_len(&segment_id);
+                let segment_id =
+                    get_segment_id_with_orientation(&data[curr_pos..segment_end], graph_storage);
+                bp_len += graph_storage.node_len(&segment_id.0);
                 segment_ids.push(segment_id);
                 // move curr_pos forward (after next comma)
                 curr_pos = segment_end + 1;
@@ -968,7 +1010,7 @@ pub fn parse_path_seq_update_tables_multiple(
     exclude_tables: Vec<&mut Option<ActiveTable>>,
     num_path: usize,
     should_keep_path: bool,
-) -> (u32, u32, Option<Vec<ItemId>>) {
+) -> (u32, u32, Option<Vec<(ItemId, Orientation)>>) {
     let mut it = data.iter();
     let end = it
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
@@ -976,7 +1018,8 @@ pub fn parse_path_seq_update_tables_multiple(
 
     log::debug!("parsing path sequences of size {} bytes..", end);
 
-    let (segment_ids, bp_len) = get_path_segment_ids(data, graph_storage, end, CHUNK_SIZE);
+    let (segment_ids, bp_len) =
+        get_path_segment_ids_with_orientation(data, graph_storage, end, CHUNK_SIZE);
 
     let path_sequence = match should_keep_path {
         true => Some(segment_ids.clone()),
@@ -984,7 +1027,7 @@ pub fn parse_path_seq_update_tables_multiple(
     };
 
     segment_ids.into_iter().for_each(|segment_id| {
-        item_table.items.push(segment_id.0);
+        item_table.items.push(segment_id.0 .0);
         item_table.id_prefsum[num_path + 1] += 1;
     });
 
@@ -1087,19 +1130,19 @@ mod tests {
         let graph_storage =
             GraphStorage::from_gfa("tests/test_files/t_groups.gfa", true, CountType::Node);
         let exp = vec![
-            ItemId(1),
-            ItemId(3),
-            ItemId(5),
-            ItemId(6),
-            ItemId(8),
-            ItemId(9),
-            ItemId(11),
-            ItemId(12),
-            ItemId(14),
-            ItemId(15),
+            (ItemId(1), Orientation::Forward),
+            (ItemId(3), Orientation::Forward),
+            (ItemId(5), Orientation::Forward),
+            (ItemId(6), Orientation::Forward),
+            (ItemId(8), Orientation::Forward),
+            (ItemId(9), Orientation::Forward),
+            (ItemId(11), Orientation::Forward),
+            (ItemId(12), Orientation::Forward),
+            (ItemId(14), Orientation::Forward),
+            (ItemId(15), Orientation::Forward),
         ];
         for i in 1..35 {
-            let (res, _) = get_path_segment_ids(data, &graph_storage, end, i);
+            let (res, _) = get_path_segment_ids_with_orientation(data, &graph_storage, end, i);
             assert_eq!(res, exp);
         }
     }
@@ -1114,19 +1157,19 @@ mod tests {
         let graph_storage =
             GraphStorage::from_gfa("tests/test_files/t_groups.gfa", true, CountType::Node);
         let exp = vec![
-            ItemId(1),
-            ItemId(3),
-            ItemId(5),
-            ItemId(6),
-            ItemId(8),
-            ItemId(9),
-            ItemId(11),
-            ItemId(12),
-            ItemId(14),
-            ItemId(15),
+            (ItemId(1), Orientation::Forward),
+            (ItemId(3), Orientation::Forward),
+            (ItemId(5), Orientation::Forward),
+            (ItemId(6), Orientation::Forward),
+            (ItemId(8), Orientation::Forward),
+            (ItemId(9), Orientation::Forward),
+            (ItemId(11), Orientation::Forward),
+            (ItemId(12), Orientation::Forward),
+            (ItemId(14), Orientation::Forward),
+            (ItemId(15), Orientation::Forward),
         ];
         for i in 1..35 {
-            let (res, _) = get_walk_segment_ids(data, &graph_storage, end, i);
+            let (res, _) = get_walk_segment_ids_with_orientation(data, &graph_storage, end, i);
             assert_eq!(res, exp);
         }
     }

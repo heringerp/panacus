@@ -1,20 +1,16 @@
 use std::collections::{HashMap, HashSet};
 
-use itertools::Itertools;
-
 use crate::{
     analysis_parameter::AnalysisParameter,
-    graph_broker::{GraphBroker, ItemId, PathSegment},
+    graph_broker::{GraphBroker, ItemId, Orientation, PathSegment},
     html_report::{AnalysisSection, ReportItem},
     util::get_default_plot_downloads,
 };
 
 use super::{
-    regional_helpers::{get_close_nodes, get_ref_length, get_windows, split_ref_paths},
+    regional_helpers::{get_windows, split_ref_paths},
     Analysis, ConstructibleAnalysis, InputRequirement,
 };
-
-const NUMBER_OF_WINDOWS: usize = 1000;
 
 pub struct RegionalDegree {
     reference_text: PathSegment,
@@ -124,29 +120,22 @@ impl RegionalDegree {
 
     fn set_values(&mut self, gb: &GraphBroker) {
         let edge2id = gb.get_edges();
-        let neighbors: HashMap<ItemId, Vec<ItemId>> = edge2id
+        let neighbors: HashMap<(ItemId, Orientation), HashSet<ItemId>> = edge2id
             .keys()
-            .map(|x| (x.0, x.2))
-            .chain(edge2id.keys().map(|x| (x.2, x.0)))
+            .flat_map(|x| [((x.0, x.1), x.2), ((x.2, x.3), x.0)])
             .fold(HashMap::new(), |mut acc, (k, v)| {
-                acc.entry(k).and_modify(|x| x.push(v)).or_insert(vec![v]);
+                acc.entry(k).or_default().insert(v);
                 acc
             });
         let ref_paths = gb.get_all_matchings_paths(&self.reference_text);
         let ref_paths = split_ref_paths(ref_paths);
         let node_lens = gb.get_node_lens();
         let degrees = gb.get_degree();
-        let all_ref_nodes = ref_paths
-            .values()
-            .flat_map(|m| m.values().flat_map(|vec_ref| vec_ref.iter().cloned()))
-            .unique()
-            .collect::<Vec<_>>();
-        let close_ones_of_ref = get_close_nodes(&all_ref_nodes, &neighbors);
         let mut all_degrees_of_windows: HashMap<PathSegment, Vec<(f64, usize, usize)>> =
             HashMap::new();
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
-                let windows = get_windows(contig, node_lens, self.window_size);
+                let windows = get_windows(contig, node_lens, self.window_size, &neighbors);
                 let contig_start = contig_id.start.unwrap_or_default();
                 let degrees_of_windows: Vec<(f64, usize, usize)> = windows
                     .iter()
@@ -154,17 +143,9 @@ impl RegionalDegree {
                         (
                             window
                                 .iter()
-                                .map(|(node, l)| {
-                                    *l as f64
-                                        * (close_ones_of_ref[node]
-                                            .iter()
-                                            .map(|current_node| degrees[current_node.0 as usize])
-                                            .sum::<u32>()
-                                            as f64
-                                            / close_ones_of_ref[node].len() as f64)
-                                })
+                                .map(|(node, _)| degrees[node.0 as usize] as f64)
                                 .sum::<f64>()
-                                / window.iter().map(|(_, l)| l).sum::<usize>() as f64,
+                                / window.len() as f64,
                             *start + contig_start,
                             *end + contig_start,
                         )

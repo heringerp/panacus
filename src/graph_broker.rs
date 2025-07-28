@@ -62,7 +62,7 @@ pub struct GraphBroker {
     group_abacus: Option<AbacusByGroup>,
     hists: Option<HashMap<CountType, Hist>>,
     csc_abacus: bool,
-    paths: HashMap<PathSegment, Vec<ItemId>>,
+    paths: HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
 
     path_lens: Option<HashMap<PathSegment, (u32, u32)>>,
     gfa_file: String,
@@ -353,14 +353,14 @@ impl GraphBroker {
         growth
     }
 
-    pub fn get_path(&self, path_seg: &PathSegment) -> &Vec<ItemId> {
+    pub fn get_path(&self, path_seg: &PathSegment) -> &Vec<(ItemId, Orientation)> {
         &self.paths[path_seg]
     }
 
     pub fn get_all_matchings_paths(
         &self,
         path_seg: &PathSegment,
-    ) -> HashMap<PathSegment, &Vec<ItemId>> {
+    ) -> HashMap<PathSegment, &Vec<(ItemId, Orientation)>> {
         let mut result = HashMap::new();
         for path in self.paths.keys() {
             if path.is_part_of(path_seg) {
@@ -486,7 +486,7 @@ impl GraphBroker {
     ) -> (
         Vec<AbacusByTotal>,
         HashMap<PathSegment, (u32, u32)>,
-        HashMap<PathSegment, Vec<ItemId>>,
+        HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
     ) {
         let (item_tables, exclude_tables, mut subset_covered_bps, path_lens, collected_paths) =
             self.parse_paths_walks(count_types, paths_to_collect);
@@ -528,7 +528,7 @@ impl GraphBroker {
         Vec<Option<ActiveTable>>,
         Option<IntervalContainer>,
         HashMap<PathSegment, (u32, u32)>,
-        HashMap<PathSegment, Vec<ItemId>>,
+        HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
     ) {
         log::info!("parsing path + walk sequences");
         log::info!("collecting: {:?}", paths_to_collect);
@@ -547,7 +547,7 @@ impl GraphBroker {
         let (mut subset_covered_bps, mut exclude_tables, include_map, exclude_map) =
             graph_mask.load_optional_subsetting_multiple(graph_storage, count_types);
 
-        let mut collected_paths = HashMap::new();
+        let mut collected_paths: HashMap<PathSegment, Vec<(ItemId, Orientation)>> = HashMap::new();
 
         let mut num_path = 0;
         let complete: Vec<(usize, usize)> = vec![(0, usize::MAX)];
@@ -628,7 +628,7 @@ impl GraphBroker {
                         _ => unreachable!(),
                     };
                     if paths_to_collect.iter().any(|p| path_seg.is_part_of(p)) {
-                        collected_paths.insert(path_seg.clone(), sids.iter().map(|(i, _)| *i).collect::<Vec<ItemId>>());
+                        collected_paths.insert(path_seg.clone(), sids.clone());
                     }
                     let mut exclude_tables_red = exclude_tables.iter_mut().enumerate().filter(|(i, _)| is.contains(i)).map(|(_, e)| e).collect();
                     match count {
