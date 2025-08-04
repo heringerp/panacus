@@ -61,7 +61,7 @@ impl Analysis for RegionalGrowth {
         let items: Vec<ReportItem> = all_values
             .into_iter()
             .map(|(sequence, values)| ReportItem::Chromosomal {
-                id: format!("{id_prefix}-{}", sequence.to_string()),
+                id: format!("{id_prefix}-{}-{}", self.count_type, sequence.to_string()),
                 name: gb.get_fname(),
                 label: "Average growth".to_string(),
                 sequence: sequence.to_string(),
@@ -71,12 +71,12 @@ impl Analysis for RegionalGrowth {
         let table_text = self.generate_table(Some(gb))?;
         let table_text = format!("`{}`", table_text);
         let regional_growth_tabs = vec![AnalysisSection {
-            id: format!("{id_prefix}"),
-            analysis: "Regional".to_string(),
+            id: format!("{id_prefix}-{}", self.count_type),
+            analysis: "Regional Growth".to_string(),
             table: Some(table_text),
             run_name: self.get_run_name(gb),
             run_id: self.get_run_id(gb),
-            countable: "growth".to_string(),
+            countable: self.count_type.to_string(),
             items,
             plot_downloads: get_default_plot_downloads(),
         }];
@@ -124,7 +124,7 @@ impl RegionalGrowth {
     }
 
     fn get_run_id(&self, gb: &GraphBroker) -> String {
-        format!("{}-coverageline", gb.get_run_id())
+        format!("{}-regionalgrowth", gb.get_run_id())
     }
 
     fn set_values(&mut self, gb: &GraphBroker) {

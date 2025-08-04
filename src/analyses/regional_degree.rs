@@ -4,7 +4,7 @@ use crate::{
     analysis_parameter::AnalysisParameter,
     graph_broker::{GraphBroker, ItemId, Orientation, PathSegment},
     html_report::{AnalysisSection, ReportItem},
-    util::get_default_plot_downloads,
+    util::{get_default_plot_downloads, CountType},
 };
 
 use super::{
@@ -55,7 +55,7 @@ impl Analysis for RegionalDegree {
         let items: Vec<ReportItem> = all_values
             .into_iter()
             .map(|(sequence, values)| ReportItem::Chromosomal {
-                id: format!("{id_prefix}-{}", sequence.to_string()),
+                id: format!("{id_prefix}-{}-{}", CountType::Node, sequence.to_string()),
                 name: gb.get_fname(),
                 label: "Average Degree".to_string(),
                 sequence: sequence.to_string(),
@@ -65,12 +65,12 @@ impl Analysis for RegionalDegree {
         let table_text = self.generate_table(Some(gb))?;
         let table_text = format!("`{}`", table_text);
         let regional_degree_tabs = vec![AnalysisSection {
-            id: format!("{id_prefix}"),
-            analysis: "Regional".to_string(),
+            id: format!("{id_prefix}-{}", CountType::Node),
+            analysis: "Regional Degree".to_string(),
             table: Some(table_text),
             run_name: self.get_run_name(gb),
             run_id: self.get_run_id(gb),
-            countable: "Degree".to_string(),
+            countable: CountType::Node.to_string(),
             items,
             plot_downloads: get_default_plot_downloads(),
         }];
@@ -115,7 +115,7 @@ impl RegionalDegree {
     }
 
     fn get_run_id(&self, gb: &GraphBroker) -> String {
-        format!("{}-coverageline", gb.get_run_id())
+        format!("{}-regionaldegree", gb.get_run_id())
     }
 
     fn set_values(&mut self, gb: &GraphBroker) {
