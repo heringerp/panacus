@@ -5,6 +5,7 @@ use itertools::Itertools;
 use ml_helpers::linear_regression::huber_regressor::{solve, HuberRegressor};
 
 use crate::{
+    analyses::regional_helpers::get_edge_windows,
     analysis_parameter::AnalysisParameter,
     graph_broker::{GraphBroker, ItemId, Orientation, PathSegment},
     html_report::{AnalysisSection, ReportItem},
@@ -86,6 +87,7 @@ impl Analysis for RegionalGrowth {
         let mut req = HashSet::from([
             InputRequirement::Hist,
             InputRequirement::Bp,
+            InputRequirement::Node,
             InputRequirement::Path(self.reference_text.clone()),
         ]);
         req.extend(InputRequirement::from_count(self.count_type).into_iter());
@@ -126,6 +128,16 @@ impl RegionalGrowth {
     }
 
     fn set_values(&mut self, gb: &GraphBroker) {
+        match self.count_type {
+            CountType::Node | CountType::Bp => self.set_values_nodes(gb),
+            CountType::Edge => self.set_values_edges(gb),
+            CountType::All => {
+                unimplemented!("Regional growth for count type all has not been implemented yet")
+            }
+        }
+    }
+
+    fn set_values_nodes(&mut self, gb: &GraphBroker) {
         let edge2id = gb.get_edges();
         let neighbors: HashMap<(ItemId, Orientation), HashSet<ItemId>> = edge2id
             .keys()
@@ -143,6 +155,7 @@ impl RegionalGrowth {
             for (contig_id, contig) in sequence {
                 let windows = get_windows(contig, node_lens, self.window_size, &neighbors);
                 let contig_start = contig_id.start.unwrap_or_default();
+                log::info!("Calculating growth for {} windows", windows.len());
                 let growths_of_windows: Vec<(f64, usize, usize)> = windows
                     .par_iter()
                     .map(|(window, start, end)| {
@@ -150,7 +163,105 @@ impl RegionalGrowth {
                             {
                                 let indeces: Vec<usize> =
                                     window.iter().map(|(idx, _)| idx.0 as usize).collect();
-                                let growth = gb.get_growth_for_subset(self.count_type, &indeces);
+                                let uncovered_bps = if self.count_type == CountType::Bp {
+                                    let uncovered_bps = window
+                                        .iter()
+                                        .filter_map(|(node, length)| {
+                                            if *length == 0
+                                                || *length == node_lens[node.0 as usize] as usize
+                                            {
+                                                None
+                                            } else {
+                                                Some((
+                                                    node.0,
+                                                    node_lens[node.0 as usize] as usize - *length,
+                                                ))
+                                            }
+                                        })
+                                        .collect::<HashMap<u64, usize>>();
+                                    Some(uncovered_bps)
+                                } else {
+                                    None
+                                };
+                                let growth = gb.get_growth_for_subset(
+                                    self.count_type,
+                                    &indeces,
+                                    uncovered_bps,
+                                );
+                                let x: Vec<f64> = (1..=growth.len())
+                                    .map(|x| (x as f64).log10())
+                                    .map(|x| {
+                                        if x.is_infinite() && x.is_sign_negative() {
+                                            -1000.0
+                                        } else {
+                                            x
+                                        }
+                                    })
+                                    .collect();
+                                let y: Vec<f64> = vec![0.0]
+                                    .into_iter()
+                                    .chain(growth.into_iter())
+                                    .tuple_windows()
+                                    .map(|(x_prev, x_curr)| (x_curr - x_prev).log10())
+                                    .map(|x| {
+                                        if x.is_infinite() && x.is_sign_negative() {
+                                            -1000.0
+                                        } else {
+                                            x
+                                        }
+                                    })
+                                    .collect();
+                                let huber = HuberRegressor::from(x, y);
+                                let params = solve(huber);
+                                -params[0]
+                            },
+                            *start + contig_start,
+                            *end + contig_start,
+                        )
+                    })
+                    .collect();
+                all_growths_of_windows
+                    .entry(sequence_id.clone())
+                    .or_default()
+                    .extend(growths_of_windows);
+            }
+        }
+        self.values = all_growths_of_windows;
+    }
+
+    fn set_values_edges(&mut self, gb: &GraphBroker) {
+        let edge2id = gb.get_edges();
+        let neighbors: HashMap<(ItemId, Orientation), HashSet<(ItemId, Orientation)>> = edge2id
+            .keys()
+            .flat_map(|x| [((x.0, x.1), (x.2, x.3)), ((x.2, x.3), (x.0, x.1))])
+            .fold(HashMap::new(), |mut acc, (k, v)| {
+                acc.entry(k).or_default().insert(v);
+                acc
+            });
+        let ref_paths = gb.get_all_matchings_paths(&self.reference_text);
+        let ref_paths = split_ref_paths(ref_paths);
+        let node_lens = gb.get_node_lens();
+        let mut all_growths_of_windows: HashMap<PathSegment, Vec<(f64, usize, usize)>> =
+            HashMap::new();
+        for (sequence_id, sequence) in ref_paths {
+            for (contig_id, contig) in sequence {
+                let windows =
+                    get_edge_windows(contig, node_lens, self.window_size, &neighbors, &edge2id);
+                let contig_start = contig_id.start.unwrap_or_default();
+                log::info!("Calculating growth for {} windows", windows.len());
+                let growths_of_windows: Vec<(f64, usize, usize)> = windows
+                    .par_iter()
+                    .map(|(window, start, end)| {
+                        (
+                            {
+                                let indeces: Vec<usize> =
+                                    window.iter().map(|idx| idx.0 as usize).collect();
+                                let uncovered_bps = None;
+                                let growth = gb.get_growth_for_subset(
+                                    self.count_type,
+                                    &indeces,
+                                    uncovered_bps,
+                                );
                                 let x: Vec<f64> = (1..=growth.len())
                                     .map(|x| (x as f64).log10())
                                     .map(|x| {

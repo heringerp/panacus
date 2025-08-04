@@ -763,7 +763,7 @@ impl AbacusByTotal {
 
     pub fn construct_hist_from_set(&self, indices: &Vec<usize>) -> Vec<usize> {
         log::debug!("constructing histogram..");
-        let mut hist: Vec<usize> = vec![0; indices.len() + 1];
+        let mut hist: Vec<usize> = vec![0; self.groups.len() + 1];
 
         for (i, cov) in indices.iter().map(|&idx| self.countable[idx]).enumerate() {
             if cov as usize >= hist.len() {
@@ -802,7 +802,7 @@ impl AbacusByTotal {
         uncovered_bps: HashMap<u64, usize>,
     ) -> Vec<usize> {
         log::debug!("constructing bp histogram..");
-        let mut hist: Vec<usize> = vec![0; indices.len() + 1];
+        let mut hist: Vec<usize> = vec![0; self.groups.len() + 1];
         for (id, cov) in indices.iter().map(|&idx| (idx, self.countable[idx])) {
             if cov as usize >= hist.len() {
                 if id != 0 {

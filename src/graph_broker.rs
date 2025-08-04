@@ -12,6 +12,8 @@ use std::{
 
 use abacus::{AbacusByTotal, GraphMask};
 use graph::GraphStorage;
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 use util::{
     parse_path_identifier, parse_path_seq_to_item_vec, parse_path_seq_update_tables_multiple,
     parse_walk_identifier, parse_walk_seq_to_item_vec, parse_walk_seq_update_tables_multiple,
@@ -345,9 +347,22 @@ impl GraphBroker {
         &self.total_abaci.as_ref().unwrap()[&count]
     }
 
-    pub fn get_growth_for_subset(&self, count: CountType, indices: &Vec<usize>) -> Vec<f64> {
+    pub fn get_growth_for_subset(
+        &self,
+        count: CountType,
+        indices: &Vec<usize>,
+        uncovered_bps: Option<HashMap<u64, usize>>,
+    ) -> Vec<f64> {
+        let mut rng = thread_rng();
+        let s: String = std::iter::repeat(())
+            .map(|()| rng.sample(Alphanumeric))
+            .map(char::from)
+            .take(7)
+            .collect();
+        log::debug!("\t{} Calculating growth for subset", s);
         let abacus = self.get_abacus_by_total(count);
-        let hist = Hist::from_abacus_for_window(abacus, self.graph_aux.as_ref(), indices, None);
+        let hist =
+            Hist::from_abacus_for_window(abacus, self.graph_aux.as_ref(), indices, uncovered_bps);
         let cov = Threshold::Absolute(1);
         let growth = hist.calc_growth_union(&cov);
         growth

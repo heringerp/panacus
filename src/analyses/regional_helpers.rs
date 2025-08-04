@@ -3,7 +3,7 @@ use std::{
     iter,
 };
 
-use crate::graph_broker::{ItemId, Orientation, PathSegment};
+use crate::graph_broker::{Edge, ItemId, Orientation, PathSegment};
 
 pub fn get_close_nodes(
     ref_nodes: &Vec<(ItemId, Orientation)>,
@@ -203,21 +203,29 @@ pub fn get_windows(
                     .flat_map(|(ref_node, ref_orientation, ref_length, included_ends)| {
                         match included_ends {
                             IncludedEnds::None => vec![(ref_node, ref_length)],
-                            IncludedEnds::Back => close_nodes[&(ref_node, ref_orientation)]
+                            IncludedEnds::Back => close_nodes
+                                .get(&(ref_node, ref_orientation))
+                                .unwrap_or(&Vec::new())
                                 .iter()
                                 .map(|node| (*node, 0))
                                 .chain(iter::once((ref_node, ref_length)))
                                 .collect(),
-                            IncludedEnds::Front => close_nodes[&(ref_node, ref_orientation.flip())]
+                            IncludedEnds::Front => close_nodes
+                                .get(&(ref_node, ref_orientation.flip()))
+                                .unwrap_or(&Vec::new())
                                 .iter()
                                 .map(|node| (*node, 0))
                                 .chain(iter::once((ref_node, ref_length)))
                                 .collect(),
-                            IncludedEnds::Both => close_nodes[&(ref_node, ref_orientation)]
+                            IncludedEnds::Both => close_nodes
+                                .get(&(ref_node, ref_orientation))
+                                .unwrap_or(&Vec::new())
                                 .iter()
                                 .map(|node| (*node, 0))
                                 .chain(
-                                    close_nodes[&(ref_node, ref_orientation.flip())]
+                                    close_nodes
+                                        .get(&(ref_node, ref_orientation.flip()))
+                                        .unwrap_or(&Vec::new())
                                         .iter()
                                         .map(|node| (*node, 0)),
                                 )
@@ -233,10 +241,223 @@ pub fn get_windows(
         .collect()
 }
 
+pub fn get_edge_windows(
+    ref_nodes: &Vec<(ItemId, Orientation)>,
+    node_lens: &Vec<u32>,
+    window_size: usize,
+    neighbors: &HashMap<(ItemId, Orientation), HashSet<(ItemId, Orientation)>>,
+    edge2id: &HashMap<Edge, ItemId>,
+) -> Vec<(Vec<ItemId>, usize, usize)> {
+    let close_nodes = get_close_nodes(
+        ref_nodes,
+        &neighbors
+            .iter()
+            .map(|(idx, others)| (*idx, others.iter().map(|(a, _)| *a).collect()))
+            .collect(),
+    );
+    let ref_length = get_ref_length(ref_nodes, node_lens) as usize;
+    let number_of_windows = ref_length.div_ceil(window_size);
+    let mut ref_windows: Vec<Vec<(ItemId, Orientation, usize, IncludedEnds)>> =
+        vec![Vec::new(); number_of_windows];
+    let mut bp_counter = 0;
+    let mut current_window_index = 0;
+    let mut current_node_index = 0;
+    let mut already_used_bps_of_node = 0;
+    while bp_counter < ref_length {
+        let current_window_length: usize = ref_windows[current_window_index]
+            .iter()
+            .map(|(_, _, l, _)| l)
+            .sum();
+        let remaining_bps_in_window = window_size - current_window_length as usize;
+        let current_node_length = node_lens[ref_nodes[current_node_index].0 .0 as usize] as usize
+            - already_used_bps_of_node;
+        if current_node_length <= remaining_bps_in_window {
+            ref_windows[current_window_index].push((
+                ref_nodes[current_node_index].0,
+                ref_nodes[current_node_index].1,
+                current_node_length as usize,
+                // either both or back
+                if current_window_length == 0 && already_used_bps_of_node > 0 {
+                    IncludedEnds::Back
+                } else {
+                    IncludedEnds::Both
+                },
+            ));
+            bp_counter += current_node_length;
+            current_node_index += 1;
+            already_used_bps_of_node = 0;
+            if current_node_length == remaining_bps_in_window {
+                current_window_index += 1;
+            }
+        } else {
+            let cut_node_length = remaining_bps_in_window;
+            ref_windows[current_window_index].push((
+                ref_nodes[current_node_index].0,
+                ref_nodes[current_node_index].1,
+                cut_node_length as usize, // either none or front
+                if current_window_length == 0 && already_used_bps_of_node > 0 {
+                    IncludedEnds::None
+                } else {
+                    IncludedEnds::Front
+                },
+            ));
+            bp_counter += cut_node_length;
+            current_window_index += 1;
+            already_used_bps_of_node += cut_node_length;
+        };
+    }
+    let ref_windows = ref_windows
+        .into_iter()
+        .enumerate()
+        .map(|(i, window)| {
+            (
+                window,
+                i * window_size,
+                if i < number_of_windows - 1 {
+                    (i + 1) * window_size
+                } else {
+                    bp_counter
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let full_windows_with_end: Vec<(Vec<(ItemId, IncludedEnds)>, usize, usize)> = ref_windows
+        .into_iter()
+        .map(|(window, start, end)| {
+            (
+                window
+                    .into_iter()
+                    .flat_map(|(ref_node, ref_orientation, _ref_length, included_ends)| {
+                        match included_ends {
+                            IncludedEnds::None => vec![(ref_node, IncludedEnds::None)],
+                            IncludedEnds::Back => close_nodes
+                                .get(&(ref_node, ref_orientation))
+                                .unwrap_or(&Vec::new())
+                                .iter()
+                                .map(|node| (*node, IncludedEnds::Both))
+                                .chain(iter::once((
+                                    ref_node,
+                                    IncludedEnds::get_back_from_orientation(ref_orientation),
+                                )))
+                                .collect(),
+                            IncludedEnds::Front => close_nodes
+                                .get(&(ref_node, ref_orientation.flip()))
+                                .unwrap_or(&Vec::new())
+                                .iter()
+                                .map(|node| (*node, IncludedEnds::Both))
+                                .chain(iter::once((
+                                    ref_node,
+                                    IncludedEnds::get_front_from_orientation(ref_orientation),
+                                )))
+                                .collect(),
+                            IncludedEnds::Both => close_nodes
+                                .get(&(ref_node, ref_orientation))
+                                .unwrap_or(&Vec::new())
+                                .iter()
+                                .map(|node| (*node, IncludedEnds::Both))
+                                .chain(
+                                    close_nodes
+                                        .get(&(ref_node, ref_orientation.flip()))
+                                        .unwrap_or(&Vec::new())
+                                        .iter()
+                                        .map(|node| (*node, IncludedEnds::Both)),
+                                )
+                                .chain(iter::once((ref_node, IncludedEnds::Both)))
+                                .collect(),
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+                start,
+                end,
+            )
+        })
+        .collect::<Vec<_>>();
+    let windows = full_windows_with_end
+        .into_iter()
+        .map(|(window, start, end)| {
+            let nodes_in_window = window.iter().map(|(node, _)| *node).collect::<HashSet<_>>();
+            (
+                window
+                    .into_iter()
+                    .flat_map(|(node, included_ends)| {
+                        let empty = HashSet::new();
+                        let neighbor_iter = match included_ends {
+                            IncludedEnds::None => {
+                                Box::new(empty.iter()) as Box<dyn Iterator<Item = &_>>
+                            }
+                            IncludedEnds::Back => Box::new(
+                                neighbors
+                                    .get(&(node, Orientation::Forward))
+                                    .unwrap_or(&empty)
+                                    .iter(),
+                            ),
+                            IncludedEnds::Front => Box::new(
+                                neighbors
+                                    .get(&(node, Orientation::Backward))
+                                    .unwrap_or(&empty)
+                                    .iter(),
+                            ),
+                            IncludedEnds::Both => Box::new(
+                                neighbors
+                                    .get(&(node, Orientation::Forward))
+                                    .unwrap_or(&empty)
+                                    .iter()
+                                    .chain(
+                                        neighbors
+                                            .get(&(node, Orientation::Backward))
+                                            .unwrap_or(&empty)
+                                            .iter(),
+                                    ),
+                            ),
+                        };
+                        neighbor_iter
+                            .flat_map(|node| {
+                                neighbors
+                                    .get(node)
+                                    .unwrap_or(&HashSet::new())
+                                    .iter()
+                                    .filter_map(|other| {
+                                        if nodes_in_window.contains(&other.0) {
+                                            edge2id
+                                                .get(&Edge(node.0, node.1, other.0, other.1))
+                                                .copied()
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect::<Vec<ItemId>>()
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>(),
+                start,
+                end,
+            )
+        })
+        .collect();
+    windows
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum IncludedEnds {
     None,
     Front,
     Back,
     Both,
+}
+
+impl IncludedEnds {
+    fn get_back_from_orientation(o: Orientation) -> Self {
+        match o {
+            Orientation::Forward => IncludedEnds::Back,
+            Orientation::Backward => IncludedEnds::Front,
+        }
+    }
+
+    fn get_front_from_orientation(o: Orientation) -> Self {
+        match o {
+            Orientation::Forward => IncludedEnds::Front,
+            Orientation::Backward => IncludedEnds::Back,
+        }
+    }
 }
