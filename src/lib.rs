@@ -281,11 +281,7 @@ pub fn execute_pipeline<W: Write>(
             }
             Task::OrderChange(order) => {
                 log::info!("Executing order change: {:?}", order);
-                if let Some(order) = order.as_ref() {
-                    gb.change_order(order)?;
-                } else {
-                    gb.change_order("")?;
-                }
+                gb.change_order(order.as_deref())?;
             }
             Task::AbacusByGroupCSCChange => {
                 log::info!("Executing AbacusByGroup CSC change");

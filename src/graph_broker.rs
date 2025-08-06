@@ -141,7 +141,7 @@ impl GraphBroker {
         Ok(())
     }
 
-    pub fn change_order(&mut self, order: &str) -> Result<(), Error> {
+    pub fn change_order(&mut self, order: Option<&str>) -> Result<(), Error> {
         self.with_order(order);
         self.finish()
     }
@@ -215,8 +215,8 @@ impl GraphBroker {
         self.abacus_aux_params.negative_list = exclude.to_owned();
     }
 
-    fn with_order(&mut self, file_name: &str) {
-        self.abacus_aux_params.order = Some(file_name.to_owned());
+    fn with_order(&mut self, file_name: Option<&str>) {
+        self.abacus_aux_params.order = file_name.map(str::to_owned);
     }
 
     pub fn with_csc_abacus(mut self) -> Self {
