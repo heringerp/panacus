@@ -1,3 +1,4 @@
+use rand::seq::index;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
@@ -157,12 +158,17 @@ impl RegionalGrowth {
                 let contig_start = contig_id.start.unwrap_or_default();
                 log::info!("Calculating growth for {} windows", windows.len());
                 let growths_of_windows: Vec<(f64, usize, usize)> = windows
-                    .par_iter()
-                    .map(|(window, start, end)| {
-                        (
+                    // .par_iter()
+                    .iter()
+                    .filter_map(|(window, start, end)| {
+                        Some((
                             {
-                                let indeces: Vec<usize> =
-                                    window.iter().map(|(idx, _)| idx.0 as usize).collect();
+                                let indices: HashSet<usize> =
+                                    window.iter().map(|(idx, _)| idx.0 as usize).collect(); // Necessary to first create HashSet to remove duplicate nodes
+                                let indices: Vec<usize> = indices.into_iter().collect();
+                                if indices.len() == 1 {
+                                    return None;
+                                }
                                 let uncovered_bps = if self.count_type == CountType::Bp {
                                     let uncovered_bps = window
                                         .iter()
@@ -185,14 +191,14 @@ impl RegionalGrowth {
                                 };
                                 let growth = gb.get_growth_for_subset(
                                     self.count_type,
-                                    &indeces,
+                                    &indices,
                                     uncovered_bps,
                                 );
                                 let x: Vec<f64> = (1..=growth.len())
                                     .map(|x| (x as f64).log10())
                                     .map(|x| {
                                         if x.is_infinite() && x.is_sign_negative() {
-                                            -1000.0
+                                            -100000.0
                                         } else {
                                             x
                                         }
@@ -205,7 +211,7 @@ impl RegionalGrowth {
                                     .map(|(x_prev, x_curr)| (x_curr - x_prev).log10())
                                     .map(|x| {
                                         if x.is_infinite() && x.is_sign_negative() {
-                                            -1000.0
+                                            -100000.0
                                         } else {
                                             x
                                         }
@@ -217,7 +223,7 @@ impl RegionalGrowth {
                             },
                             *start + contig_start,
                             *end + contig_start,
-                        )
+                        ))
                     })
                     .collect();
                 all_growths_of_windows
