@@ -1,4 +1,3 @@
-use rand::seq::index;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
@@ -65,6 +64,7 @@ impl Analysis for RegionalGrowth {
                 id: format!("{id_prefix}-{}-{}", self.count_type, sequence.to_string()),
                 name: gb.get_fname(),
                 label: "Average growth".to_string(),
+                is_diverging: true,
                 sequence: sequence.to_string(),
                 values,
             })
@@ -154,8 +154,14 @@ impl RegionalGrowth {
             HashMap::new();
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
-                let windows = get_windows(contig, node_lens, self.window_size, &neighbors);
                 let contig_start = contig_id.start.unwrap_or_default();
+                let windows = get_windows(
+                    contig,
+                    node_lens,
+                    self.window_size,
+                    &neighbors,
+                    contig_start,
+                );
                 log::info!("Calculating growth for {} windows", windows.len());
                 let growths_of_windows: Vec<(f64, usize, usize)> = windows
                     // .par_iter()
@@ -251,9 +257,15 @@ impl RegionalGrowth {
             HashMap::new();
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
-                let windows =
-                    get_edge_windows(contig, node_lens, self.window_size, &neighbors, &edge2id);
                 let contig_start = contig_id.start.unwrap_or_default();
+                let windows = get_edge_windows(
+                    contig,
+                    node_lens,
+                    self.window_size,
+                    &neighbors,
+                    &edge2id,
+                    contig_start,
+                );
                 log::info!("Calculating growth for {} windows", windows.len());
                 let growths_of_windows: Vec<(f64, usize, usize)> = windows
                     .par_iter()

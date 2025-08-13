@@ -58,6 +58,7 @@ impl Analysis for RegionalDegree {
                 id: format!("{id_prefix}-{}-{}", CountType::Node, sequence.to_string()),
                 name: gb.get_fname(),
                 label: "Average Degree".to_string(),
+                is_diverging: false,
                 sequence: sequence.to_string(),
                 values,
             })
@@ -135,8 +136,14 @@ impl RegionalDegree {
             HashMap::new();
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
-                let windows = get_windows(contig, node_lens, self.window_size, &neighbors);
                 let contig_start = contig_id.start.unwrap_or_default();
+                let windows = get_windows(
+                    contig,
+                    node_lens,
+                    self.window_size,
+                    &neighbors,
+                    contig_start,
+                );
                 let degrees_of_windows: Vec<(f64, usize, usize)> = windows
                     .iter()
                     .map(|(window, start, end)| {

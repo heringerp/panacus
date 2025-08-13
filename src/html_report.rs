@@ -459,6 +459,7 @@ pub enum ReportItem {
         id: String,
         name: String,
         label: String,
+        is_diverging: bool,
         sequence: String,
         values: Vec<(f64, usize, usize)>,
     },
@@ -558,6 +559,7 @@ impl ReportItem {
                 id,
                 name,
                 label,
+                is_diverging,
                 sequence,
                 values,
             } => {
@@ -592,8 +594,8 @@ impl ReportItem {
                 }
                 data_text.push_str("]}");
                 let js_object = format!(
-                    "new Chromosomal('{}', '{}', '{}', '{}', {})",
-                    id, name, label, sequence, data_text,
+                    "new Chromosomal('{}', '{}', '{}', {}, '{}', {})",
+                    id, name, label, is_diverging, sequence, data_text,
                 );
                 let data = HashMap::from([("id".to_string(), to_json(&id))]);
                 Ok((

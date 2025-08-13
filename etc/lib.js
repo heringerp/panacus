@@ -43,10 +43,11 @@ class Heatmap {
 }
 
 class Chromosomal {
-    constructor(id, name, label, sequence, data) {
+    constructor(id, name, label, diverging, sequence, data) {
         this.id = id;
         this.name = name;
         this.label = label;
+        this.diverging = diverging;
         this.sequence = sequence;
         this.data = data;
     }

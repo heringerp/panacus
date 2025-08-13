@@ -350,6 +350,17 @@ for (let key in objects.datasets) {
         let c = element;
         let thisId = 'chart-chromosomal-' + c.id;
         // buildPlotDownload(myChart, h.id, fname);
+        let scale;
+        if (c.diverging) {
+            scale = {
+                "domainMid": 1,
+                "range": ["#81e7ff", "#582948", "#ffcf67"],
+            };
+        } else {
+            scale = {
+                "scheme": "yellowgreenblue",
+            };
+        }
         let mySpec = {
             "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
             "description": "Hexbin",
@@ -384,7 +395,7 @@ for (let key in objects.datasets) {
                 "color": {
                     "field": "y",
                     "type": "quantitative",
-                    "scale": {"scheme": "yellowgreenblue"},
+                    "scale": scale,
                     "title": c.label
                 },
                 "tooltip": [

@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    iter,
+    iter::{self},
 };
 
 use crate::graph_broker::{Edge, ItemId, Orientation, PathSegment};
@@ -126,10 +126,11 @@ pub fn get_windows(
     node_lens: &Vec<u32>,
     window_size: usize,
     neighbors: &HashMap<(ItemId, Orientation), HashSet<ItemId>>,
+    contig_start: usize,
 ) -> Vec<(Vec<(ItemId, usize)>, usize, usize)> {
     let close_nodes = get_close_nodes(ref_nodes, neighbors);
     let ref_length = get_ref_length(ref_nodes, node_lens) as usize;
-    let number_of_windows = ref_length.div_ceil(window_size);
+    let number_of_windows = (ref_length + (contig_start % window_size)).div_ceil(window_size);
     let mut ref_windows: Vec<Vec<(ItemId, Orientation, usize, IncludedEnds)>> =
         vec![Vec::new(); number_of_windows];
     let mut bp_counter = 0;
@@ -141,7 +142,16 @@ pub fn get_windows(
             .iter()
             .map(|(_, _, l, _)| l)
             .sum();
-        let remaining_bps_in_window = window_size - current_window_length as usize;
+        let remaining_bps_in_window = if current_window_index == 0 {
+            window_size - (contig_start % window_size) - current_window_length as usize
+        } else {
+            window_size - current_window_length as usize
+        };
+        let remaining_bps_in_window = if remaining_bps_in_window > ref_length {
+            ref_length
+        } else {
+            remaining_bps_in_window
+        };
         let current_node_length = node_lens[ref_nodes[current_node_index].0 .0 as usize] as usize
             - already_used_bps_of_node;
         if current_node_length <= remaining_bps_in_window {
@@ -179,15 +189,28 @@ pub fn get_windows(
             already_used_bps_of_node += cut_node_length;
         };
     }
+    let first_window = if contig_start % window_size != 0 {
+        window_size - (contig_start % window_size)
+    } else {
+        window_size
+    };
     let ref_windows = ref_windows
         .into_iter()
         .enumerate()
-        .map(|(i, window)| {
+        .zip(
+            std::iter::once(0).chain(std::iter::successors(Some(first_window), |x| {
+                Some(x + window_size)
+            })),
+        )
+        .zip(std::iter::successors(Some(first_window), |x| {
+            x.checked_add(window_size)
+        }))
+        .map(|(((i, window), start), end)| {
             (
                 window,
-                i * window_size,
+                start,
                 if i < number_of_windows - 1 {
-                    (i + 1) * window_size
+                    end
                 } else {
                     bp_counter
                 },
@@ -247,6 +270,7 @@ pub fn get_edge_windows(
     window_size: usize,
     neighbors: &HashMap<(ItemId, Orientation), HashSet<(ItemId, Orientation)>>,
     edge2id: &HashMap<Edge, ItemId>,
+    contig_start: usize,
 ) -> Vec<(Vec<ItemId>, usize, usize)> {
     let close_nodes = get_close_nodes(
         ref_nodes,
@@ -256,7 +280,7 @@ pub fn get_edge_windows(
             .collect(),
     );
     let ref_length = get_ref_length(ref_nodes, node_lens) as usize;
-    let number_of_windows = ref_length.div_ceil(window_size);
+    let number_of_windows = (ref_length + (contig_start % window_size)).div_ceil(window_size);
     let mut ref_windows: Vec<Vec<(ItemId, Orientation, usize, IncludedEnds)>> =
         vec![Vec::new(); number_of_windows];
     let mut bp_counter = 0;
@@ -268,7 +292,16 @@ pub fn get_edge_windows(
             .iter()
             .map(|(_, _, l, _)| l)
             .sum();
-        let remaining_bps_in_window = window_size - current_window_length as usize;
+        let remaining_bps_in_window = if current_window_index == 0 {
+            window_size - (contig_start % window_size) - current_window_length as usize
+        } else {
+            window_size - current_window_length as usize
+        };
+        let remaining_bps_in_window = if remaining_bps_in_window > ref_length {
+            ref_length
+        } else {
+            remaining_bps_in_window
+        };
         let current_node_length = node_lens[ref_nodes[current_node_index].0 .0 as usize] as usize
             - already_used_bps_of_node;
         if current_node_length <= remaining_bps_in_window {
@@ -306,15 +339,28 @@ pub fn get_edge_windows(
             already_used_bps_of_node += cut_node_length;
         };
     }
+    let first_window = if contig_start % window_size != 0 {
+        window_size - (contig_start % window_size)
+    } else {
+        window_size
+    };
     let ref_windows = ref_windows
         .into_iter()
         .enumerate()
-        .map(|(i, window)| {
+        .zip(
+            std::iter::once(0).chain(std::iter::successors(Some(first_window), |x| {
+                Some(x + window_size)
+            })),
+        )
+        .zip(std::iter::successors(Some(first_window), |x| {
+            x.checked_add(window_size)
+        }))
+        .map(|(((i, window), start), end)| {
             (
                 window,
-                i * window_size,
+                start,
                 if i < number_of_windows - 1 {
-                    (i + 1) * window_size
+                    end
                 } else {
                     bp_counter
                 },

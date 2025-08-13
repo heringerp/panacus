@@ -61,6 +61,7 @@ impl Analysis for RegionalCount {
                 id: format!("{id_prefix}-{}-{}", self.count_type, sequence.to_string()),
                 name: gb.get_fname(),
                 label: "Count".to_string(),
+                is_diverging: false,
                 sequence: sequence.to_string(),
                 values,
             })
@@ -150,8 +151,14 @@ impl RegionalCount {
             HashMap::new();
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
-                let windows = get_windows(contig, node_lens, self.window_size, &neighbors);
                 let contig_start = contig_id.start.unwrap_or_default();
+                let windows = get_windows(
+                    contig,
+                    node_lens,
+                    self.window_size,
+                    &neighbors,
+                    contig_start,
+                );
                 log::info!("Calculating count for {} windows", windows.len());
                 let counts_of_windows: Vec<(f64, usize, usize)> = windows
                     .par_iter()
@@ -208,9 +215,15 @@ impl RegionalCount {
             HashMap::new();
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
-                let windows =
-                    get_edge_windows(contig, node_lens, self.window_size, &neighbors, &edge2id);
                 let contig_start = contig_id.start.unwrap_or_default();
+                let windows = get_edge_windows(
+                    contig,
+                    node_lens,
+                    self.window_size,
+                    &neighbors,
+                    &edge2id,
+                    contig_start,
+                );
                 log::info!("Calculating count for {} windows", windows.len());
                 let counts_of_windows: Vec<(f64, usize, usize)> = windows
                     .par_iter()
