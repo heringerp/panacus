@@ -179,6 +179,28 @@ for (let key in objects.datasets) {
         let m = element;
         var ctx = document.getElementById('chart-bar-' + m.id);
         let id = 'chart-bar-' + m.id;
+        let mark_type, x_encoding;
+        if (m.data.values.length >= 200) {
+            mark_type = "area";
+            x_encoding = {
+                "field": "label",
+                "title": m.x_label,
+                "type": "quantitative",
+                "scale": {
+                    "nice": false
+                }
+            };
+        } else {
+            mark_type = "bar";
+            x_encoding = {
+                "field": "label",
+                "title": m.x_label,
+                "sort": null,
+                "axis": {
+                    "labelOverlap": "greedy"
+                }
+            }
+        }
         let yourVlSpec = {
             $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
             description: 'MultiBar',
@@ -191,11 +213,12 @@ for (let key in objects.datasets) {
             data: m.data,
             layer: [
                 {
-                    mark: {"type": 'bar', "tooltip": {"content": "data"}},
+                    mark: {"type": mark_type, "tooltip": {"content": "data"}},
                     encoding: {
-                        x: {field: 'label', type: 'ordinal', title: m.x_label, sort: null},
+                        "x": x_encoding,
                         "y": {
-                            "aggregate": "sum", "field": "value",
+                            "aggregate": "sum",
+                            "field": "value",
                             "title": m.y_label,
                             "stack": null
                         },

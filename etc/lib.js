@@ -17,12 +17,13 @@ class Bar {
 }
 
 class MultiBar {
-    constructor(id, x_label, y_label, log_toggle, data) {
+    constructor(id, x_label, y_label, log_toggle, data, ordinal) {
         this.id = id;
         this.x_label = x_label;
         this.y_label = y_label;
         this.log_toggle = log_toggle;
         this.data = data;
+        this.ordinal = ordinal;
     }
 }
 
