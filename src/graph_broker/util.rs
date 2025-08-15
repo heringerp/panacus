@@ -752,7 +752,7 @@ pub fn parse_walk_seq_update_tables(
             if let Ok(_) = mutex_item_table.lock() {
                 unsafe {
                     (*items_ptr.0).push(sid.0);
-                    (*id_prefsum_ptr.0)[num_path + 1] += 1;
+                    (&mut (*id_prefsum_ptr.0))[num_path + 1] += 1;
                 }
             }
             bp_len.fetch_add(
@@ -1090,7 +1090,7 @@ pub fn parse_path_seq_update_tables(
             if let Ok(_) = mutex_item_table.lock() {
                 unsafe {
                     (*items_ptr.0).push(segment_id.0);
-                    (*id_prefsum_ptr.0)[num_path + 1] += 1;
+                    (&mut (*id_prefsum_ptr.0))[num_path + 1] += 1;
                 }
             }
             graph_storage.node_len(&segment_id)

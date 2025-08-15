@@ -754,8 +754,8 @@ impl AbacusByTotal {
                 if last[sid] != group_id
                     && (exclude_table.is_none() || !exclude_table.as_ref().unwrap().items[sid])
                 {
-                    (*countable_ptr.0)[sid] += 1;
-                    (*last_ptr.0)[sid] = group_id;
+                    (&mut (*countable_ptr.0))[sid] += 1;
+                    (&mut (*last_ptr.0))[sid] = group_id;
                 }
             }
         }
@@ -936,8 +936,8 @@ impl AbacusByGroup {
                     && (exclude_table.is_none() || !exclude_table.as_ref().unwrap().items[sid])
                 {
                     unsafe {
-                        (*r_ptr.0)[sid] += 1;
-                        (*last_ptr.0)[sid] = *group_id;
+                        (&mut (*r_ptr.0))[sid] += 1;
+                        (&mut (*last_ptr.0))[sid] = *group_id;
                     }
                 }
             }
@@ -1009,14 +1009,14 @@ impl AbacusByGroup {
                         // we  look at an untouched interval, so let's get the pointer game
                         // started...
                         if c[cv_end - 1] == GroupSize::MAX {
-                            (*c_ptr.0)[cv_start] = *group_id;
+                            (&mut (*c_ptr.0))[cv_start] = *group_id;
                             // if it's just a single value in this interval, the pointer game
                             // ends before it started
                             if cv_start < cv_end - 1 {
-                                (*c_ptr.0)[cv_end - 1] = 0;
+                                (&mut (*c_ptr.0))[cv_end - 1] = 0;
                             }
                             if report_values {
-                                (*v_ptr.0)[cv_start] += 1;
+                                (&mut (*v_ptr.0))[cv_start] += 1;
                             }
                         } else if cv_start + p < cv_end - 1 {
                             // if group id of current slot does not match current group id
@@ -1024,17 +1024,17 @@ impl AbacusByGroup {
                             // move on to the next slot
                             if c[cv_start + p] < *group_id {
                                 // move on to the next slot
-                                (*c_ptr.0)[cv_end - 1] += 1;
+                                (&mut (*c_ptr.0))[cv_end - 1] += 1;
                                 // update local pointer
                                 p += 1;
-                                (*c_ptr.0)[cv_start + p] = *group_id
+                                (&mut (*c_ptr.0))[cv_start + p] = *group_id
                             }
                             if report_values {
-                                (*v_ptr.0)[cv_start + p] += 1;
+                                (&mut (*v_ptr.0))[cv_start + p] += 1;
                             }
                         } else if report_values {
                             // make sure it points to the last element and not beyond
-                            (*v_ptr.0)[cv_end - 1] += 1;
+                            (&mut (*v_ptr.0))[cv_end - 1] += 1;
                         }
                     }
                 }
