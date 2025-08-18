@@ -658,6 +658,7 @@ impl ReportItem {
                 if !registry.has_template("bar") {
                     registry.register_template_string("bar", from_utf8(BAR_HBS).unwrap())?;
                 }
+                let ordinal = labels.iter().all(|l| l.parse::<f64>().is_ok());
                 let data_text = (0..labels.len())
                     .cartesian_product(0..names.len())
                     .map(|(l, n)| {
@@ -669,8 +670,8 @@ impl ReportItem {
                     .join(",");
                 let data_text = format!("{{'values': [{}]}}", data_text);
                 let js_object = format!(
-                    "new MultiBar('{}', '{}', '{}', {}, {})",
-                    id, x_label, y_label, log_toggle, data_text
+                    "new MultiBar('{}', '{}', '{}', {}, {}, {})",
+                    id, x_label, y_label, log_toggle, data_text, ordinal,
                 );
                 let data = HashMap::from([
                     ("id".to_string(), to_json(&id)),

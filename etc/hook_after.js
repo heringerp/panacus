@@ -65,6 +65,28 @@ for (let key in objects.datasets) {
         } else {
             data.values = h.data.values;
         }
+        if (h.data.values.length >= 200 && h.ordinal) {
+            mark_type = "area";
+            x_encoding = {
+                "field": "label",
+                "title": h.x_label,
+                "type": "quantitative",
+                "scale": {
+                    "nice": false
+                }
+            };
+        } else {
+            mark_type = "bar";
+            x_encoding = {
+                "field": "label",
+                "title": h.x_label,
+                "sort": null,
+                "type": h.ordinal ? 'ordinal' : 'nominal',
+                "axis": {
+                    "labelOverlap": "greedy"
+                }
+            }
+        }
         if (h.log_toggle) {
             data.values = data.values.filter((el) => el.value > 0);
         }
@@ -81,27 +103,10 @@ for (let key in objects.datasets) {
             data,
             layer: [
                 {
-                    "params": [
-                        {
-                            "name": "hover",
-                            "select": {"type": "point", "on": "pointerover", "clear": "pointerout"}
-                        }
-                    ],
-                    "mark": {"type": "bar", "color": "#eee", "tooltip": true},
+                    "mark": {"type": mark_type, "tooltip": true},
                     "encoding": {
-                        x: {field: 'label', type: 'nominal', "axis": {"labelAngle": 65}, title: h.x_label},
-                        "opacity": {
-                            "condition": {"test": {"param": "hover", "empty": false}, "value": 0.5},
-                            "value": 0
-                        },
-                        "detail": [{field: 'value', type: 'quantitative', title: h.y_label}]
-                    }
-                },
-                {
-                    mark: 'bar',
-                    encoding: {
-                        x: {field: 'label', type: h.ordinal ? 'ordinal' : 'nominal', "axis": {"labelAngle": 65}, title: h.x_label},
-                        y: {field: 'value', title: h.y_label},
+                        "x": x_encoding,
+                        "y": {"field": 'value', "title": h.y_label},
                     },
                 },
             ]
@@ -110,12 +115,12 @@ for (let key in objects.datasets) {
         function render(scaleType, thisId, vlSpec, add_listeners) {
             const copied_spec = JSON.parse(JSON.stringify(vlSpec)); // deep copy
             if (scaleType == "log") {
-                copied_spec.layer[1].encoding.y.scale = { type: "log", domainMin: 1 }; // set scale type
-                copied_spec.layer[1].encoding.y2 = { datum: 1 }; // set scale type
+                copied_spec.layer[0].encoding.y.scale = { type: "log", domainMin: 1 }; // set scale type
+                copied_spec.layer[0].encoding.y2 = { datum: 1 }; // set scale type
             } else {
-                copied_spec.layer[1].encoding.y.scale = { type: "linear" }; // set scale type
-                if ('y2' in copied_spec.layer[1].encoding) {
-                    delete copied_spec.layer[1].encoding[y2]; // set scale type
+                copied_spec.layer[0].encoding.y.scale = { type: "linear" }; // set scale type
+                if ('y2' in copied_spec.layer[0].encoding) {
+                    delete copied_spec.layer[0].encoding[y2]; // set scale type
                 }
             }
             let opt = {
@@ -180,7 +185,7 @@ for (let key in objects.datasets) {
         var ctx = document.getElementById('chart-bar-' + m.id);
         let id = 'chart-bar-' + m.id;
         let mark_type, x_encoding;
-        if (m.data.values.length >= 200) {
+        if (m.data.values.length >= 200 && m.ordinal) {
             mark_type = "area";
             x_encoding = {
                 "field": "label",
@@ -190,11 +195,23 @@ for (let key in objects.datasets) {
                     "nice": false
                 }
             };
+        } else if (m.data.values.length >= 200) {
+            mark_type = "area";
+            x_encoding = {
+                "field": "label",
+                "title": m.x_label,
+                "type": 'nominal',
+                "sort": null,
+                "axis": {
+                    "labelOverlap": "greedy"
+                }
+            }
         } else {
             mark_type = "bar";
             x_encoding = {
                 "field": "label",
                 "title": m.x_label,
+                "type": m.ordinal ? 'ordinal' : 'nominal',
                 "sort": null,
                 "axis": {
                     "labelOverlap": "greedy"
@@ -620,11 +637,17 @@ for (let key in objects.datasets) {
                     "field": "y",
                     "type": "ordinal",
                     "sort": null,
+                    "axis": {
+                        "labelOverlap": "greedy"
+                    }
                 },
                 "x": {
                     "field": "x",
                     "type": "ordinal",
                     "sort": null,
+                    "axis": {
+                        "labelOverlap": "greedy"
+                    }
                 },
                 "color": {
                     "field": "value",
