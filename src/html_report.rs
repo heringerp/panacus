@@ -77,6 +77,8 @@ impl AnalysisSection {
                 .iter()
                 .map(|item| HashMap::from([("id", item.get_id()), ("name", item.get_name())]))
                 .collect()
+        } else if self.items.len() == 0 {
+            vec![]
         } else {
             vec![HashMap::from([
                 ("id", self.items[0].get_id()),
