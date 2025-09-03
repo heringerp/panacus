@@ -102,7 +102,7 @@ impl AnalysisSection {
         let js_objects = js_objects
             .into_iter()
             .reduce(combine_vars)
-            .expect("Tab has at least one item");
+            .unwrap_or_default();
         let plot_downloads: Vec<HashMap<&str, String>> = self
             .plot_downloads
             .iter()
