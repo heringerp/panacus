@@ -414,6 +414,8 @@ pub enum ReportItem {
         labels: Vec<String>,
         values: Vec<Vec<f64>>,
         log_toggle: bool,
+        curve: Option<Vec<f64>>,
+        alpha: Option<f64>,
     },
     Table {
         id: String,
@@ -656,6 +658,8 @@ impl ReportItem {
                 labels,
                 values,
                 log_toggle,
+                curve,
+                alpha,
             } => {
                 if !registry.has_template("bar") {
                     registry.register_template_string("bar", from_utf8(BAR_HBS).unwrap())?;
@@ -671,9 +675,27 @@ impl ReportItem {
                     })
                     .join(",");
                 let data_text = format!("{{'values': [{}]}}", data_text);
+                let curve_text = match curve {
+                    Some(c) => {
+                        let curve_text = labels
+                            .iter()
+                            .zip(c)
+                            .map(|(l, c)| format!("{{'label': '{}', 'value': {}}}", l, c))
+                            .join(",");
+                        format!("{{'values': [{}]}}", curve_text)
+                    }
+                    None => "{}".to_string(),
+                };
                 let js_object = format!(
-                    "new MultiBar('{}', '{}', '{}', {}, {}, {})",
-                    id, x_label, y_label, log_toggle, data_text, ordinal,
+                    "new MultiBar('{}', '{}', '{}', {}, {}, {}, {}, {})",
+                    id,
+                    x_label,
+                    y_label,
+                    log_toggle,
+                    data_text,
+                    ordinal,
+                    alpha.unwrap_or(f64::NAN),
+                    curve_text,
                 );
                 let data = HashMap::from([
                     ("id".to_string(), to_json(&id)),

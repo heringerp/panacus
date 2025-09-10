@@ -4,6 +4,7 @@ use std::io::Write;
 use std::io::{Error, ErrorKind};
 use std::str::FromStr;
 
+use itertools::Itertools;
 /* external crate */
 use rayon::prelude::*;
 
@@ -342,6 +343,21 @@ impl ThresholdContainer {
             quorum: quorum_thresholds,
             coverage: coverage_thresholds,
         })
+    }
+
+    pub fn has_full_growth_at_idx(&self) -> Option<usize> {
+        self.coverage
+            .iter()
+            .zip(self.quorum.iter())
+            .enumerate()
+            .filter_map(|(i, (c, q))| {
+                if c.to_relative(1) == 1.0 && q.to_relative(1) == 0.0 {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .next()
     }
 }
 

@@ -3,6 +3,8 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufReader;
 
+use itertools::Itertools;
+use ml_helpers::linear_regression::huber_regressor::{solve_with_logging, HuberRegressor};
 use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
 
 use crate::analysis_parameter::AnalysisParameter;
@@ -122,6 +124,7 @@ impl Analysis for Growth {
         let table = self.generate_table(dm)?;
         let table = format!("`{}`", &table);
         let growths = &self.inner.as_ref().unwrap().growths;
+        let heaps_curves = &self.inner.as_ref().unwrap().heaps_curves;
         let id_prefix = format!(
             "pan-growth-{}",
             self.get_run_id(dm.expect("Growth should be called with a graph"))
@@ -130,7 +133,8 @@ impl Analysis for Growth {
         );
         let growth_tabs = growths
             .iter()
-            .map(|(k, v)| AnalysisSection {
+            .enumerate()
+            .map(|(i, (k, v))| AnalysisSection {
                 id: format!("{id_prefix}-{k}"),
                 analysis: "Pangenome Growth".to_string(),
                 run_name: self.get_run_name(dm.expect("Growth should be called with a graph")),
@@ -151,6 +155,8 @@ impl Analysis for Growth {
                                 .collect()
                         })
                         .collect(),
+                    curve: heaps_curves.as_ref().map(|c| c[i].1.clone()).flatten(),
+                    alpha: heaps_curves.as_ref().map(|c| c[i].0.clone()),
                     log_toggle: false,
                 }],
                 plot_downloads: get_default_plot_downloads(),
@@ -290,11 +296,67 @@ impl Growth {
                     .par_bridge()
                     .map(|h| (h.count, h.calc_all_growths(&hist_aux)))
                     .collect();
+                let heaps_curves = hist_aux.has_full_growth_at_idx().map(|index| {
+                    log::info!("Calculating heaps law");
+                    let heaps_curves: Vec<_> = growths
+                        .iter()
+                        .map(|(_count_type, growth)| {
+                            let growth = growth[index].clone();
+                            let growth_len = growth.len();
+                            let mut x: Vec<f64> = (1..=growth_len)
+                                .map(|x| (x as f64).log10())
+                                .map(|x| {
+                                    if x.is_infinite() && x.is_sign_negative() {
+                                        -100000.0
+                                    } else {
+                                        x
+                                    }
+                                })
+                                .collect();
+                            let mut y: Vec<f64> = vec![0.0]
+                                .into_iter()
+                                .chain(growth.into_iter())
+                                .tuple_windows()
+                                .map(|(x_prev, x_curr)| (x_curr - x_prev).log10())
+                                .map(|x| {
+                                    if x.is_infinite() && x.is_sign_negative() {
+                                        -100000.0
+                                    } else {
+                                        x
+                                    }
+                                })
+                                .collect();
+                            // Remove NaN values
+                            x.remove(0);
+                            x.remove(0);
+                            y.remove(0);
+                            y.remove(0);
+                            log::info!("Regressing huber, {} - {}", x.len(), y.len());
+                            let huber = HuberRegressor::from(x, y);
+                            let params = solve_with_logging(huber);
+                            log::info!("Huber done");
+                            let alpha = -params[0];
+                            if alpha >= 1.0 {
+                                (alpha, None)
+                            } else {
+                                let gamma = 1.0 - alpha;
+                                let k_2 = 10.0_f64.powf(params[1]);
+                                let k_1 = k_2 / gamma;
+                                let curve_values = (1..=growth_len)
+                                    .map(|x| (x as f64).powf(gamma) * k_1)
+                                    .collect::<Vec<_>>();
+                                (alpha, Some(curve_values))
+                            }
+                        })
+                        .collect();
+                    heaps_curves
+                });
                 self.inner = Some(InnerGrowth {
                     growths,
                     comments: Vec::new(),
                     hist_aux,
                     hists: None,
+                    heaps_curves,
                 });
             }
             Ok(())
@@ -309,4 +371,5 @@ struct InnerGrowth {
     comments: Comments,
     hist_aux: ThresholdContainer,
     hists: Option<Hists>,
+    heaps_curves: Option<Vec<(f64, Option<Vec<f64>>)>>,
 }

@@ -92,6 +92,8 @@ impl Analysis for OrderedHistgrowth {
                 labels,
                 values: growths.clone(),
                 log_toggle: false,
+                alpha: None,
+                curve: None,
             }],
             plot_downloads: get_default_plot_downloads(),
         }];

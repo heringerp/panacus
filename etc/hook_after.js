@@ -218,17 +218,7 @@ for (let key in objects.datasets) {
                 }
             }
         }
-        let yourVlSpec = {
-            $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
-            description: 'MultiBar',
-            width: 1000,
-            "autosize": {
-                "type": "fit",
-                "contains": "padding"
-            },
-            height: 350,
-            data: m.data,
-            layer: [
+        let layer_values = [
                 {
                     "params": [
                         {
@@ -241,8 +231,8 @@ for (let key in objects.datasets) {
                           }
                         }
                     ],
-                    mark: {"type": mark_type, "tooltip": {"content": "data"}},
-                    encoding: {
+                    "mark": {"type": mark_type, "tooltip": {"content": "data"}},
+                    "encoding": {
                         "x": x_encoding,
                         "y": {
                             "aggregate": "sum",
@@ -263,8 +253,39 @@ for (let key in objects.datasets) {
                         }
                     },
                 },
-            ]
+            ];
+        if ('values' in m.heaps_law) {
+            layer_values.push({
+                "data": m.heaps_law,
+                "mark": {
+                    "type": "line",
+                    "color": "red"
+                },
+                "encoding": {
+                    "x": {"field": "label", "type": "ordinal", "sort": null},
+                    "y": {"field": "value", "scale": { "type": "linear" } }
+                }
+            });
+        }
+        let yourVlSpec = {
+            $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
+            "description": 'MultiBar',
+            "width": 1000,
+            "autosize": {
+                "type": "fit",
+                "contains": "padding"
+            },
+            "height": 350,
+            "data": m.data,
+            "layer": layer_values,
+            "resolve": {
+                "x": "shared",
+                "y": "shared"
+            }
         };
+        if (!isNaN(m.alpha)) {
+            yourVlSpec["title"] = "Growth plot with α=" + m.alpha.toFixed(3);
+        }
 
         function render(scaleType, thisId, vlSpec, add_listeners) {
             const copied_spec = JSON.parse(JSON.stringify(vlSpec)); // deep copy
