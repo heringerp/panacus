@@ -185,7 +185,7 @@ for (let key in objects.datasets) {
         var ctx = document.getElementById('chart-bar-' + m.id);
         let id = 'chart-bar-' + m.id;
         let mark_type, x_encoding;
-        if (m.data.values.length >= 200 && m.ordinal) {
+        if (m.data.values.length >= 300 && m.ordinal) {
             mark_type = "area";
             x_encoding = {
                 "field": "label",
@@ -195,7 +195,7 @@ for (let key in objects.datasets) {
                     "nice": false
                 }
             };
-        } else if (m.data.values.length >= 200) {
+        } else if (m.data.values.length >= 300) {
             mark_type = "area";
             x_encoding = {
                 "field": "label",
@@ -235,7 +235,6 @@ for (let key in objects.datasets) {
                     "encoding": {
                         "x": x_encoding,
                         "y": {
-                            "aggregate": "sum",
                             "field": "value",
                             "title": m.y_label,
                             "stack": null
@@ -254,15 +253,15 @@ for (let key in objects.datasets) {
                     },
                 },
             ];
-        if ('values' in m.heaps_law) {
+        if ('values' in m.heaps_curve) {
             layer_values.push({
-                "data": m.heaps_law,
+                "data": m.heaps_curve,
                 "mark": {
                     "type": "line",
                     "color": "red"
                 },
                 "encoding": {
-                    "x": {"field": "label", "type": "ordinal", "sort": null},
+                    "x": x_encoding,
                     "y": {"field": "value", "scale": { "type": "linear" } }
                 }
             });

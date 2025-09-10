@@ -303,6 +303,7 @@ impl Growth {
                         .map(|(_count_type, growth)| {
                             let growth = growth[index].clone();
                             let growth_len = growth.len();
+                            let growth_last = *growth.last().unwrap();
                             let mut x: Vec<f64> = (1..=growth_len)
                                 .map(|x| (x as f64).log10())
                                 .map(|x| {
@@ -332,7 +333,7 @@ impl Growth {
                             y.remove(0);
                             y.remove(0);
                             log::info!("Regressing huber, {} - {}", x.len(), y.len());
-                            let huber = HuberRegressor::from(x, y);
+                            let huber = HuberRegressor::from(x.clone(), y.clone());
                             let params = solve_with_logging(huber);
                             log::info!("Huber done");
                             let alpha = -params[0];
@@ -345,6 +346,9 @@ impl Growth {
                                 let curve_values = (1..=growth_len)
                                     .map(|x| (x as f64).powf(gamma) * k_1)
                                     .collect::<Vec<_>>();
+                                let diff = curve_values.last().unwrap() - growth_last;
+                                let curve_values =
+                                    curve_values.into_iter().map(|x| x - diff).collect();
                                 (alpha, Some(curve_values))
                             }
                         })
