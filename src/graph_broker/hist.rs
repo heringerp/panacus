@@ -346,18 +346,21 @@ impl ThresholdContainer {
     }
 
     pub fn has_full_growth_at_idx(&self) -> Option<usize> {
-        self.coverage
+        let mut index_by_coverage: Vec<(f64, usize)> = self
+            .coverage
             .iter()
             .zip(self.quorum.iter())
             .enumerate()
             .filter_map(|(i, (c, q))| {
-                if c.to_relative(1) == 1.0 && q.to_relative(1) == 0.0 {
-                    Some(i)
+                if q.to_relative(1) == 0.0 {
+                    Some((c.to_relative(1), i))
                 } else {
                     None
                 }
             })
-            .next()
+            .collect();
+        index_by_coverage.sort_by(|(c1, _), (c2, _)| c1.partial_cmp(c2).unwrap());
+        index_by_coverage.get(0).map(|(_, i)| *i)
     }
 }
 
