@@ -160,6 +160,15 @@ impl GraphBroker {
         self.finish()
     }
 
+    pub fn get_node_names(&self) -> HashMap<ItemId, Vec<u8>> {
+        let tuples = self
+            .graph_aux
+            .as_ref()
+            .expect("GraphBroker contains graph")
+            .get_node_tuples();
+        tuples.into_iter().map(|(name, id)| (id, name)).collect()
+    }
+
     fn from_gfa(input_requirements: &HashSet<Req>, nice: bool) -> Self {
         let count_type = if Self::contains_at_least_two(input_requirements) {
             CountType::All

@@ -214,6 +214,8 @@ pub enum AnalysisParameter {
         count_type: CountType,
         #[serde(default = "get_coverage")]
         coverage: usize,
+        #[serde(default)]
+        log_windows: bool,
     },
     RegionalCount {
         reference: String,

@@ -23,6 +23,7 @@ pub struct RegionalGrowth {
     count_type: CountType,
     values: HashMap<PathSegment, Vec<(f64, usize, usize)>>,
     coverage: usize,
+    log_windows: bool,
 }
 
 impl Analysis for RegionalGrowth {
@@ -103,13 +104,14 @@ impl Analysis for RegionalGrowth {
 
 impl ConstructibleAnalysis for RegionalGrowth {
     fn from_parameter(parameter: crate::analysis_parameter::AnalysisParameter) -> Self {
-        let (reference, window_size, count_type, coverage) = match parameter {
+        let (reference, window_size, count_type, coverage, log_windows) = match parameter {
             AnalysisParameter::RegionalGrowth {
                 reference,
                 window_size,
                 count_type,
                 coverage,
-            } => (reference, window_size, count_type, coverage),
+                log_windows,
+            } => (reference, window_size, count_type, coverage, log_windows),
             _ => panic!("Regional growth should only be called with correct parameter"),
         };
         Self {
@@ -118,6 +120,7 @@ impl ConstructibleAnalysis for RegionalGrowth {
             window_size,
             values: HashMap::new(),
             coverage,
+            log_windows,
         }
     }
 }
@@ -153,6 +156,11 @@ impl RegionalGrowth {
         let ref_paths = gb.get_all_matchings_paths(&self.reference_text);
         let ref_paths = split_ref_paths(ref_paths);
         let node_lens = gb.get_node_lens();
+        let node_names = if self.log_windows {
+            gb.get_node_names()
+        } else {
+            HashMap::new()
+        };
         let mut all_growths_of_windows: HashMap<PathSegment, Vec<(f64, usize, usize)>> =
             HashMap::new();
         for (sequence_id, sequence) in ref_paths {
@@ -172,6 +180,17 @@ impl RegionalGrowth {
                     .filter_map(|(window, start, end)| {
                         Some((
                             {
+                                if self.log_windows {
+                                    eprint!("window {}-{}\t", start, end);
+                                    let text = window
+                                        .iter()
+                                        .map(|(id, _)| {
+                                            str::from_utf8(&node_names[id])
+                                                .expect("Node name can be parsed to string")
+                                        })
+                                        .join("\t");
+                                    eprintln!("{}", text);
+                                }
                                 let indices: HashSet<usize> =
                                     window.iter().map(|(idx, _)| idx.0 as usize).collect(); // Necessary to first create HashSet to remove duplicate nodes
                                 let indices: Vec<usize> = indices.into_iter().collect();
