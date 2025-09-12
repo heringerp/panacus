@@ -22,6 +22,7 @@ pub struct RegionalGrowth {
     window_size: usize,
     count_type: CountType,
     values: HashMap<PathSegment, Vec<(f64, usize, usize)>>,
+    coverage: usize,
 }
 
 impl Analysis for RegionalGrowth {
@@ -102,12 +103,13 @@ impl Analysis for RegionalGrowth {
 
 impl ConstructibleAnalysis for RegionalGrowth {
     fn from_parameter(parameter: crate::analysis_parameter::AnalysisParameter) -> Self {
-        let (reference, window_size, count_type) = match parameter {
+        let (reference, window_size, count_type, coverage) = match parameter {
             AnalysisParameter::RegionalGrowth {
                 reference,
                 window_size,
                 count_type,
-            } => (reference, window_size, count_type),
+                coverage,
+            } => (reference, window_size, count_type, coverage),
             _ => panic!("Regional growth should only be called with correct parameter"),
         };
         Self {
@@ -115,6 +117,7 @@ impl ConstructibleAnalysis for RegionalGrowth {
             count_type,
             window_size,
             values: HashMap::new(),
+            coverage,
         }
     }
 }
@@ -199,6 +202,7 @@ impl RegionalGrowth {
                                     self.count_type,
                                     &indices,
                                     uncovered_bps,
+                                    self.coverage,
                                 );
                                 let x: Vec<f64> = (1..=growth.len())
                                     .map(|x| (x as f64).log10())
@@ -279,6 +283,7 @@ impl RegionalGrowth {
                                     self.count_type,
                                     &indeces,
                                     uncovered_bps,
+                                    self.coverage,
                                 );
                                 let x: Vec<f64> = (1..=growth.len())
                                     .map(|x| (x as f64).log10())

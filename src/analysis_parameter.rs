@@ -212,6 +212,8 @@ pub enum AnalysisParameter {
         window_size: usize,
         #[serde(default)]
         count_type: CountType,
+        #[serde(default = "get_coverage")]
+        coverage: usize,
     },
     RegionalCount {
         reference: String,
@@ -245,6 +247,10 @@ fn get_radius() -> u32 {
 
 fn get_window_size() -> usize {
     1_000_000
+}
+
+fn get_coverage() -> usize {
+    1
 }
 
 impl AnalysisParameter {
