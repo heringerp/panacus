@@ -19,3 +19,4 @@ etc/package.json
 /*.data
 /*.json
 /*.txt
+*.ipynb
