@@ -176,6 +176,8 @@ pub enum AnalysisParameter {
     NodeDistribution {
         #[serde(default = "get_radius")]
         radius: u32,
+        #[serde(default = "get_threshold")]
+        threshold: usize,
     },
     Info,
     OrderedGrowth {
@@ -249,6 +251,10 @@ fn get_radius() -> u32 {
 
 fn get_window_size() -> usize {
     1_000_000
+}
+
+fn get_threshold() -> usize {
+    1_000
 }
 
 fn get_coverage() -> usize {

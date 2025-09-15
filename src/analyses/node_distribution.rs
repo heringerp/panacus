@@ -16,6 +16,7 @@ pub struct NodeDistribution {
     bins: Vec<Bin>,
     min: (u32, f64),
     max: (u32, f64),
+    threshold: usize,
 }
 
 impl Analysis for NodeDistribution {
@@ -65,6 +66,7 @@ impl Analysis for NodeDistribution {
             items: vec![ReportItem::Hexbin {
                 id: format!("{id_prefix}-{}", CountType::Node),
                 bins: self.bins.clone(),
+                threshold: self.threshold,
             }],
             plot_downloads: get_default_plot_downloads(),
         }];
@@ -73,11 +75,19 @@ impl Analysis for NodeDistribution {
 }
 
 impl ConstructibleAnalysis for NodeDistribution {
-    fn from_parameter(_parameter: crate::analysis_parameter::AnalysisParameter) -> Self {
+    fn from_parameter(parameter: crate::analysis_parameter::AnalysisParameter) -> Self {
+        let threshold = match parameter {
+            crate::analysis_parameter::AnalysisParameter::NodeDistribution {
+                radius: _radius,
+                threshold,
+            } => threshold,
+            _ => panic!("Node Distribution should only be called with correct parameter"),
+        };
         Self {
             bins: Vec::new(),
             min: (0, 0.0),
             max: (0, 0.0),
+            threshold,
         }
     }
 }

@@ -181,7 +181,11 @@ impl RegionalGrowth {
                         Some((
                             {
                                 if self.log_windows {
-                                    eprint!("window {}-{}\t", start, end);
+                                    eprint!(
+                                        "window {}-{}\t",
+                                        start + contig_start,
+                                        end + contig_start
+                                    );
                                     let text = window
                                         .iter()
                                         .map(|(id, _)| {

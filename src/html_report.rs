@@ -425,6 +425,7 @@ pub enum ReportItem {
     Hexbin {
         id: String,
         bins: Vec<Bin>,
+        threshold: usize,
     },
     Heatmap {
         id: String,
@@ -709,7 +710,11 @@ impl ReportItem {
                     )]),
                 ))
             }
-            Self::Hexbin { id, bins } => {
+            Self::Hexbin {
+                id,
+                bins,
+                threshold,
+            } => {
                 if !registry.has_template("hexbin") {
                     registry.register_template_string("hexbin", from_utf8(HEXBIN_HBS).unwrap())?;
                 }
@@ -723,8 +728,11 @@ impl ReportItem {
                 js_object.push_str("]}, [");
                 for (_i, bin) in bins.into_iter().enumerate() {
                     js_object.push_str(&format!("[",));
-                    for node in bin.content {
+                    for node in bin.content.iter().take(threshold) {
                         js_object.push_str(&format!("{},", node.0,));
+                    }
+                    if threshold < bin.content.len() {
+                        js_object.push_str("-1, ");
                     }
                     js_object.push_str("],");
                 }

@@ -586,7 +586,11 @@ for (let key in objects.datasets) {
                 let table = "";
                 ids.forEach((id) => {
                     h.bin_content[id - 1].forEach((dataPoint) => {
-                        table += dataPoint + "\t" + id + "\n";
+                        if (dataPoint != -1) {
+                            table += dataPoint + "\t" + id + "\n";
+                        } else {
+                            table += "ThisBinContainsMoreThan1000Entries\t" + id + "\n";
+                        }
                     });
                 });
                 let blob = new Blob([table], {type: 'text/plain'});

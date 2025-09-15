@@ -33,7 +33,10 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, an
             "".to_string(),
             None,
             false,
-            vec![AnalysisParameter::NodeDistribution { radius }],
+            vec![AnalysisParameter::NodeDistribution {
+                radius,
+                threshold: 1000,
+            }],
         )];
         log::info!("{parameters:?}");
         Some(Ok(parameters))

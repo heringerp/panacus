@@ -363,13 +363,7 @@ impl GraphBroker {
         uncovered_bps: Option<HashMap<u64, usize>>,
         coverage: usize,
     ) -> Vec<f64> {
-        let mut rng = thread_rng();
-        let s: String = std::iter::repeat(())
-            .map(|()| rng.sample(Alphanumeric))
-            .map(char::from)
-            .take(7)
-            .collect();
-        log::debug!("\t{} Calculating growth for subset", s);
+        log::debug!("Calculating growth for subset");
         let abacus = self.get_abacus_by_total(count);
         let hist =
             Hist::from_abacus_for_window(abacus, self.graph_aux.as_ref(), indices, uncovered_bps);
