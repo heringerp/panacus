@@ -464,9 +464,10 @@ pub enum ReportItem {
         id: String,
         name: String,
         label: String,
+        second_label: String,
         is_diverging: bool,
         sequence: String,
-        values: Vec<(f64, usize, usize)>,
+        values: Vec<(f64, f64, usize, usize)>,
     },
 }
 
@@ -564,6 +565,7 @@ impl ReportItem {
                 id,
                 name,
                 label,
+                second_label,
                 is_diverging,
                 sequence,
                 values,
@@ -583,14 +585,19 @@ impl ReportItem {
 
                     // if two following values are continuous
                     // introduce overlap in plot (avoids gaps due to rounding errors)
-                    if values[i].2 == values[i + 1].1 {
-                        values.get_mut(i).expect("values has value").2 = values[i + 1].2;
+                    if values[i].3 == values[i + 1].2 {
+                        values.get_mut(i).expect("values has value").3 = values[i + 1].3;
                     }
                 }
 
                 let data: Vec<String> = values
                     .into_iter()
-                    .map(|(y, x, x2)| format!("{{'x': {}, 'x2': {}, 'y': {}}}", x, x2, y))
+                    .map(|(y, y2, x, x2)| {
+                        format!(
+                            "{{'x': {}, 'x2': {}, 'y': {}, 'second_value': {}}}",
+                            x, x2, y, y2
+                        )
+                    })
                     .collect();
                 let mut data_text = "{'values': [".to_string();
                 for datum in data {
@@ -599,8 +606,8 @@ impl ReportItem {
                 }
                 data_text.push_str("]}");
                 let js_object = format!(
-                    "new Chromosomal('{}', '{}', '{}', {}, '{}', {})",
-                    id, name, label, is_diverging, sequence, data_text,
+                    "new Chromosomal('{}', '{}', '{}', '{}', {}, '{}', {})",
+                    id, name, label, second_label, is_diverging, sequence, data_text,
                 );
                 let data = HashMap::from([("id".to_string(), to_json(&id))]);
                 Ok((

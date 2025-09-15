@@ -61,9 +61,10 @@ impl Analysis for RegionalCount {
                 id: format!("{id_prefix}-{}-{}", self.count_type, sequence.to_string()),
                 name: gb.get_fname(),
                 label: "Count".to_string(),
+                second_label: "".to_string(),
                 is_diverging: false,
                 sequence: sequence.to_string(),
-                values,
+                values: values.into_iter().map(|(v, s, e)| (v, 0.0, s, e)).collect(),
             })
             .collect();
         let table_text = self.generate_table(Some(gb))?;

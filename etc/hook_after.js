@@ -436,6 +436,19 @@ for (let key in objects.datasets) {
                 "scheme": "yellowgreenblue",
             };
         }
+        let tooltip;
+        if (c.secondLabel) {
+            tooltip = [
+                  {"field": "x", "type": "quantitative", "title": "Position in bps"},
+                  {"field": "y", "type": "quantitative", "title": c.label},
+                  {"field": "second_value", "type": "quantitative", "title": c.secondLabel}
+            ];
+        } else {
+            tooltip = [
+                  {"field": "x", "type": "quantitative", "title": "Position in bps"},
+                  {"field": "y", "type": "quantitative", "title": c.label},
+            ];
+        }
         let mySpec = {
             "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
             "description": "Hexbin",
@@ -473,10 +486,7 @@ for (let key in objects.datasets) {
                     "scale": scale,
                     "title": c.label
                 },
-                "tooltip": [
-                  {"field": "x", "type": "quantitative", "title": "Position in bps"},
-                  {"field": "y", "type": "quantitative", "title": c.label}
-                ]
+                "tooltip": tooltip
             },
             "config": {
                 "axis": {"grid": true, "tickBand": "extent"},

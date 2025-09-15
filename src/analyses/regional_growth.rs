@@ -21,7 +21,7 @@ pub struct RegionalGrowth {
     reference_text: PathSegment,
     window_size: usize,
     count_type: CountType,
-    values: HashMap<PathSegment, Vec<(f64, usize, usize)>>,
+    values: HashMap<PathSegment, Vec<(f64, f64, usize, usize)>>,
     coverage: usize,
     log_windows: bool,
 }
@@ -37,7 +37,7 @@ impl Analysis for RegionalGrowth {
         }
         let mut text = format!("track type=bedGraph name=\"Panacus growth\" description=\"Average growth for a window of bps\" visibility=full color=200,100,0 priority=20\n");
         for (sequence_id, sequence) in &self.values {
-            for (growth, start, end) in sequence {
+            for (growth, _r_squared, start, end) in sequence {
                 let line = format!("{} {} {} {}\n", sequence_id.to_string(), start, end, growth,);
                 text.push_str(&line);
             }
@@ -66,6 +66,7 @@ impl Analysis for RegionalGrowth {
                 id: format!("{id_prefix}-{}-{}", self.count_type, sequence.to_string()),
                 name: gb.get_fname(),
                 label: "Average growth".to_string(),
+                second_label: "R²".to_string(),
                 is_diverging: true,
                 sequence: sequence.to_string(),
                 values,
@@ -161,7 +162,7 @@ impl RegionalGrowth {
         } else {
             HashMap::new()
         };
-        let mut all_growths_of_windows: HashMap<PathSegment, Vec<(f64, usize, usize)>> =
+        let mut all_growths_of_windows: HashMap<PathSegment, Vec<(f64, f64, usize, usize)>> =
             HashMap::new();
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
@@ -174,89 +175,83 @@ impl RegionalGrowth {
                     contig_start,
                 );
                 log::info!("Calculating growth for {} windows", windows.len());
-                let growths_of_windows: Vec<(f64, usize, usize)> = windows
+                let growths_of_windows: Vec<(f64, f64, usize, usize)> = windows
                     // .par_iter()
                     .iter()
                     .filter_map(|(window, start, end)| {
-                        Some((
-                            {
-                                if self.log_windows {
-                                    eprint!(
-                                        "window {}-{}\t",
-                                        start + contig_start,
-                                        end + contig_start
-                                    );
-                                    let text = window
-                                        .iter()
-                                        .map(|(id, _)| {
-                                            str::from_utf8(&node_names[id])
-                                                .expect("Node name can be parsed to string")
-                                        })
-                                        .join("\t");
-                                    eprintln!("{}", text);
-                                }
-                                let indices: HashSet<usize> =
-                                    window.iter().map(|(idx, _)| idx.0 as usize).collect(); // Necessary to first create HashSet to remove duplicate nodes
-                                let indices: Vec<usize> = indices.into_iter().collect();
-                                if indices.len() == 1 {
-                                    return None;
-                                }
-                                let uncovered_bps = if self.count_type == CountType::Bp {
-                                    let uncovered_bps = window
-                                        .iter()
-                                        .filter_map(|(node, length)| {
-                                            if *length == 0
-                                                || *length == node_lens[node.0 as usize] as usize
-                                            {
-                                                None
-                                            } else {
-                                                Some((
-                                                    node.0,
-                                                    node_lens[node.0 as usize] as usize - *length,
-                                                ))
-                                            }
-                                        })
-                                        .collect::<HashMap<u64, usize>>();
-                                    Some(uncovered_bps)
-                                } else {
-                                    None
-                                };
-                                let growth = gb.get_growth_for_subset(
-                                    self.count_type,
-                                    &indices,
-                                    uncovered_bps,
-                                    self.coverage,
-                                );
-                                let x: Vec<f64> = (1..=growth.len())
-                                    .map(|x| (x as f64).log10())
-                                    .map(|x| {
-                                        if x.is_infinite() && x.is_sign_negative() {
-                                            -100000.0
+                        let (alpha, r_squared) = {
+                            if self.log_windows {
+                                eprint!("window {}-{}\t", start + contig_start, end + contig_start);
+                                let text = window
+                                    .iter()
+                                    .map(|(id, _)| {
+                                        str::from_utf8(&node_names[id])
+                                            .expect("Node name can be parsed to string")
+                                    })
+                                    .join("\t");
+                                eprintln!("{}", text);
+                            }
+                            let indices: HashSet<usize> =
+                                window.iter().map(|(idx, _)| idx.0 as usize).collect(); // Necessary to first create HashSet to remove duplicate nodes
+                            let indices: Vec<usize> = indices.into_iter().collect();
+                            if indices.len() == 1 {
+                                return None;
+                            }
+                            let uncovered_bps = if self.count_type == CountType::Bp {
+                                let uncovered_bps = window
+                                    .iter()
+                                    .filter_map(|(node, length)| {
+                                        if *length == 0
+                                            || *length == node_lens[node.0 as usize] as usize
+                                        {
+                                            None
                                         } else {
-                                            x
+                                            Some((
+                                                node.0,
+                                                node_lens[node.0 as usize] as usize - *length,
+                                            ))
                                         }
                                     })
-                                    .collect();
-                                let y: Vec<f64> = vec![0.0]
-                                    .into_iter()
-                                    .chain(growth.into_iter())
-                                    .tuple_windows()
-                                    .map(|(x_prev, x_curr)| (x_curr - x_prev).log10())
-                                    .map(|x| {
-                                        if x.is_infinite() && x.is_sign_negative() {
-                                            -100000.0
-                                        } else {
-                                            x
-                                        }
-                                    })
-                                    .collect();
-                                let huber = HuberRegressor::from(x, y);
-                                let params = solve(huber);
-                                -params[0]
-                            },
-                            *start + contig_start,
-                            *end + contig_start,
-                        ))
+                                    .collect::<HashMap<u64, usize>>();
+                                Some(uncovered_bps)
+                            } else {
+                                None
+                            };
+                            let growth = gb.get_growth_for_subset(
+                                self.count_type,
+                                &indices,
+                                uncovered_bps,
+                                self.coverage,
+                            );
+                            let x: Vec<f64> = (1..=growth.len())
+                                .map(|x| (x as f64).log10())
+                                .map(|x| {
+                                    if x.is_infinite() && x.is_sign_negative() {
+                                        -100000.0
+                                    } else {
+                                        x
+                                    }
+                                })
+                                .collect();
+                            let y: Vec<f64> = vec![0.0]
+                                .into_iter()
+                                .chain(growth.into_iter())
+                                .tuple_windows()
+                                .map(|(x_prev, x_curr)| (x_curr - x_prev).log10())
+                                .map(|x| {
+                                    if x.is_infinite() && x.is_sign_negative() {
+                                        -100000.0
+                                    } else {
+                                        x
+                                    }
+                                })
+                                .collect();
+                            let huber = HuberRegressor::from(x.clone(), y.clone());
+                            let params = solve(huber);
+                            let r_squared = calculate_r_squared(&x, &y, params[0], params[1]);
+                            (-params[0], r_squared)
+                        };
+                        Some((alpha, r_squared, *start + contig_start, *end + contig_start))
                     })
                     .collect();
                 all_growths_of_windows
@@ -280,7 +275,7 @@ impl RegionalGrowth {
         let ref_paths = gb.get_all_matchings_paths(&self.reference_text);
         let ref_paths = split_ref_paths(ref_paths);
         let node_lens = gb.get_node_lens();
-        let mut all_growths_of_windows: HashMap<PathSegment, Vec<(f64, usize, usize)>> =
+        let mut all_growths_of_windows: HashMap<PathSegment, Vec<(f64, f64, usize, usize)>> =
             HashMap::new();
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
@@ -294,50 +289,48 @@ impl RegionalGrowth {
                     contig_start,
                 );
                 log::info!("Calculating growth for {} windows", windows.len());
-                let growths_of_windows: Vec<(f64, usize, usize)> = windows
+                let growths_of_windows: Vec<(f64, f64, usize, usize)> = windows
                     .par_iter()
                     .map(|(window, start, end)| {
-                        (
-                            {
-                                let indeces: Vec<usize> =
-                                    window.iter().map(|idx| idx.0 as usize).collect();
-                                let uncovered_bps = None;
-                                let growth = gb.get_growth_for_subset(
-                                    self.count_type,
-                                    &indeces,
-                                    uncovered_bps,
-                                    self.coverage,
-                                );
-                                let x: Vec<f64> = (1..=growth.len())
-                                    .map(|x| (x as f64).log10())
-                                    .map(|x| {
-                                        if x.is_infinite() && x.is_sign_negative() {
-                                            -1000.0
-                                        } else {
-                                            x
-                                        }
-                                    })
-                                    .collect();
-                                let y: Vec<f64> = vec![0.0]
-                                    .into_iter()
-                                    .chain(growth.into_iter())
-                                    .tuple_windows()
-                                    .map(|(x_prev, x_curr)| (x_curr - x_prev).log10())
-                                    .map(|x| {
-                                        if x.is_infinite() && x.is_sign_negative() {
-                                            -1000.0
-                                        } else {
-                                            x
-                                        }
-                                    })
-                                    .collect();
-                                let huber = HuberRegressor::from(x, y);
-                                let params = solve(huber);
-                                -params[0]
-                            },
-                            *start + contig_start,
-                            *end + contig_start,
-                        )
+                        let (alpha, r_squared) = {
+                            let indeces: Vec<usize> =
+                                window.iter().map(|idx| idx.0 as usize).collect();
+                            let uncovered_bps = None;
+                            let growth = gb.get_growth_for_subset(
+                                self.count_type,
+                                &indeces,
+                                uncovered_bps,
+                                self.coverage,
+                            );
+                            let x: Vec<f64> = (1..=growth.len())
+                                .map(|x| (x as f64).log10())
+                                .map(|x| {
+                                    if x.is_infinite() && x.is_sign_negative() {
+                                        -1000.0
+                                    } else {
+                                        x
+                                    }
+                                })
+                                .collect();
+                            let y: Vec<f64> = vec![0.0]
+                                .into_iter()
+                                .chain(growth.into_iter())
+                                .tuple_windows()
+                                .map(|(x_prev, x_curr)| (x_curr - x_prev).log10())
+                                .map(|x| {
+                                    if x.is_infinite() && x.is_sign_negative() {
+                                        -1000.0
+                                    } else {
+                                        x
+                                    }
+                                })
+                                .collect();
+                            let huber = HuberRegressor::from(x.clone(), y.clone());
+                            let params = solve(huber);
+                            let r_squared = calculate_r_squared(&x, &y, params[0], params[1]);
+                            (-params[0], r_squared)
+                        };
+                        (alpha, r_squared, *start + contig_start, *end + contig_start)
                     })
                     .collect();
                 all_growths_of_windows
@@ -348,4 +341,16 @@ impl RegionalGrowth {
         }
         self.values = all_growths_of_windows;
     }
+}
+
+pub fn calculate_r_squared(x: &Vec<f64>, y: &Vec<f64>, m: f64, b: f64) -> f64 {
+    let f: Vec<f64> = x.iter().map(|x_val| m * x_val + b).collect();
+    let ss_res: f64 = y
+        .iter()
+        .zip(f.iter())
+        .map(|(y_val, f_val)| (y_val - f_val).powi(2))
+        .sum();
+    let y_hat: f64 = y.iter().copied().sum::<f64>() / y.len() as f64;
+    let ss_tot: f64 = y.iter().map(|y_val| (y_val - y_hat).powi(2)).sum();
+    1.0 - (ss_res / ss_tot)
 }
