@@ -157,11 +157,6 @@ impl RegionalGrowth {
         let ref_paths = gb.get_all_matchings_paths(&self.reference_text);
         let ref_paths = split_ref_paths(ref_paths);
         let node_lens = gb.get_node_lens();
-        let node_names = if self.log_windows {
-            gb.get_node_names()
-        } else {
-            HashMap::new()
-        };
         let mut all_growths_of_windows: HashMap<PathSegment, Vec<(f64, f64, usize, usize)>> =
             HashMap::new();
         for (sequence_id, sequence) in ref_paths {
@@ -180,17 +175,6 @@ impl RegionalGrowth {
                     .iter()
                     .filter_map(|(window, start, end)| {
                         let (alpha, r_squared) = {
-                            if self.log_windows {
-                                eprint!("window {}-{}\t", start + contig_start, end + contig_start);
-                                let text = window
-                                    .iter()
-                                    .map(|(id, _)| {
-                                        str::from_utf8(&node_names[id])
-                                            .expect("Node name can be parsed to string")
-                                    })
-                                    .join("\t");
-                                eprintln!("{}", text);
-                            }
                             let indices: HashSet<usize> =
                                 window.iter().map(|(idx, _)| idx.0 as usize).collect(); // Necessary to first create HashSet to remove duplicate nodes
                             let indices: Vec<usize> = indices.into_iter().collect();
@@ -223,8 +207,10 @@ impl RegionalGrowth {
                                 uncovered_bps,
                                 self.coverage,
                             );
-                            let x: Vec<f64> = (1..=growth.len())
-                                .map(|x| (x as f64).log10())
+                            let x: Vec<f64> = (1..=growth.len()).map(|x| (x as f64)).collect();
+                            let log_x: Vec<f64> = x
+                                .iter()
+                                .map(|x| x.log10())
                                 .map(|x| {
                                     if x.is_infinite() && x.is_sign_negative() {
                                         -100000.0
@@ -237,18 +223,43 @@ impl RegionalGrowth {
                                 .into_iter()
                                 .chain(growth.into_iter())
                                 .tuple_windows()
-                                .map(|(x_prev, x_curr)| (x_curr - x_prev).log10())
-                                .map(|x| {
-                                    if x.is_infinite() && x.is_sign_negative() {
+                                .map(|(x_prev, x_curr)| (x_curr - x_prev))
+                                .collect();
+                            let log_y: Vec<f64> = y
+                                .iter()
+                                .map(|y| y.log10())
+                                .map(|y| {
+                                    if y.is_infinite() && y.is_sign_negative() {
                                         -100000.0
                                     } else {
-                                        x
+                                        y
                                     }
                                 })
                                 .collect();
-                            let huber = HuberRegressor::from(x.clone(), y.clone());
+                            let huber = HuberRegressor::from(log_x.clone(), log_y.clone());
                             let params = solve(huber);
-                            let r_squared = calculate_r_squared(&x, &y, params[0], params[1]);
+                            let r_squared =
+                                calculate_r_squared(&log_x, &log_y, params[0], params[1]);
+                            if self.log_windows {
+                                eprintln!(
+                                    "W {}-{}\ty = {} * x + {}, R² = {}\t",
+                                    start + contig_start,
+                                    end + contig_start,
+                                    params[0],
+                                    params[1],
+                                    r_squared
+                                );
+                                x.iter().zip(y.iter()).for_each(|(x_val, y_val)| {
+                                    eprintln!(
+                                        "W {}-{}\t{}\t{}\t{}",
+                                        start + contig_start,
+                                        end + contig_start,
+                                        x_val,
+                                        y_val,
+                                        10.0_f64.powf(params[1]) * x_val.powf(params[0])
+                                    );
+                                });
+                            }
                             (-params[0], r_squared)
                         };
                         Some((alpha, r_squared, *start + contig_start, *end + contig_start))
