@@ -12,8 +12,6 @@ use std::{
 
 use abacus::{AbacusByTotal, GraphMask};
 use graph::GraphStorage;
-use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
 use util::{
     parse_path_identifier, parse_path_seq_to_item_vec, parse_path_seq_update_tables_multiple,
     parse_walk_identifier, parse_walk_seq_to_item_vec, parse_walk_seq_update_tables_multiple,

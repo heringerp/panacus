@@ -63,6 +63,7 @@ impl Analysis for RegionalCount {
                 label: "Count".to_string(),
                 second_label: "".to_string(),
                 is_diverging: false,
+                contains_outliers: false,
                 sequence: sequence.to_string(),
                 values: values.into_iter().map(|(v, s, e)| (v, 0.0, s, e)).collect(),
             })

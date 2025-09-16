@@ -17,7 +17,7 @@ use super::{
     Analysis, ConstructibleAnalysis, InputRequirement,
 };
 
-pub struct RegionalGrowth {
+pub struct RegionalCompleteness {
     reference_text: PathSegment,
     window_size: usize,
     count_type: CountType,
@@ -26,19 +26,25 @@ pub struct RegionalGrowth {
     log_windows: bool,
 }
 
-impl Analysis for RegionalGrowth {
+impl Analysis for RegionalCompleteness {
     fn generate_table(
         &mut self,
         gb: Option<&crate::graph_broker::GraphBroker>,
     ) -> anyhow::Result<String> {
-        let gb = gb.expect("Regional growth should always have a graph");
+        let gb = gb.expect("Regional completeness should always have a graph");
         if self.values.is_empty() {
             self.set_values(gb);
         }
-        let mut text = format!("track type=bedGraph name=\"Panacus growth\" description=\"Average growth for a window of bps\" visibility=full color=200,100,0 priority=20\n");
+        let mut text = format!("track type=bedGraph name=\"Panacus completeness\" description=\"Completeness for a window of bps\" visibility=full color=200,100,0 priority=20\n");
         for (sequence_id, sequence) in &self.values {
-            for (growth, _r_squared, start, end) in sequence {
-                let line = format!("{} {} {} {}\n", sequence_id.to_string(), start, end, growth,);
+            for (completeness, _r_squared, start, end) in sequence {
+                let line = format!(
+                    "{} {} {} {}\n",
+                    sequence_id.to_string(),
+                    start,
+                    end,
+                    completeness,
+                );
                 text.push_str(&line);
             }
         }
@@ -49,12 +55,12 @@ impl Analysis for RegionalGrowth {
         &mut self,
         gb: Option<&crate::graph_broker::GraphBroker>,
     ) -> anyhow::Result<Vec<crate::html_report::AnalysisSection>> {
-        let gb = gb.expect("Regional growth should always have a graph");
+        let gb = gb.expect("Regional completeness should always have a graph");
         if self.values.is_empty() {
             self.set_values(gb);
         }
         let id_prefix = format!(
-            "regional-growth-{}",
+            "regional-completeness-{}",
             self.get_run_id(gb)
                 .to_lowercase()
                 .replace(&[' ', '|', '\\'], "-")
@@ -65,19 +71,19 @@ impl Analysis for RegionalGrowth {
             .map(|(sequence, values)| ReportItem::Chromosomal {
                 id: format!("{id_prefix}-{}-{}", self.count_type, sequence.to_string()),
                 name: gb.get_fname(),
-                label: "Average growth".to_string(),
+                label: "Completeness".to_string(),
                 second_label: "R²".to_string(),
-                is_diverging: true,
-                contains_outliers: false,
+                is_diverging: false,
+                contains_outliers: true,
                 sequence: sequence.to_string(),
                 values,
             })
             .collect();
         let table_text = self.generate_table(Some(gb))?;
         let table_text = format!("`{}`", table_text);
-        let regional_growth_tabs = vec![AnalysisSection {
+        let regional_completeness_tabs = vec![AnalysisSection {
             id: format!("{id_prefix}-{}", self.count_type),
-            analysis: "Regional Growth".to_string(),
+            analysis: "Regional Completeness".to_string(),
             table: Some(table_text),
             run_name: self.get_run_name(gb),
             run_id: self.get_run_id(gb),
@@ -85,7 +91,7 @@ impl Analysis for RegionalGrowth {
             items,
             plot_downloads: get_default_plot_downloads(),
         }];
-        Ok(regional_growth_tabs)
+        Ok(regional_completeness_tabs)
     }
 
     fn get_graph_requirements(&self) -> std::collections::HashSet<super::InputRequirement> {
@@ -100,21 +106,21 @@ impl Analysis for RegionalGrowth {
     }
 
     fn get_type(&self) -> String {
-        "Regionalgrowth".to_string()
+        "RegionalCompleteness".to_string()
     }
 }
 
-impl ConstructibleAnalysis for RegionalGrowth {
+impl ConstructibleAnalysis for RegionalCompleteness {
     fn from_parameter(parameter: crate::analysis_parameter::AnalysisParameter) -> Self {
         let (reference, window_size, count_type, coverage, log_windows) = match parameter {
-            AnalysisParameter::RegionalGrowth {
+            AnalysisParameter::RegionalCompleteness {
                 reference,
                 window_size,
                 count_type,
                 coverage,
                 log_windows,
             } => (reference, window_size, count_type, coverage, log_windows),
-            _ => panic!("Regional growth should only be called with correct parameter"),
+            _ => panic!("Regional completeness should only be called with correct parameter"),
         };
         Self {
             reference_text: PathSegment::from_str(&reference),
@@ -127,13 +133,13 @@ impl ConstructibleAnalysis for RegionalGrowth {
     }
 }
 
-impl RegionalGrowth {
+impl RegionalCompleteness {
     fn get_run_name(&self, gb: &GraphBroker) -> String {
         format!("{}", gb.get_run_name())
     }
 
     fn get_run_id(&self, gb: &GraphBroker) -> String {
-        format!("{}-regionalgrowth", gb.get_run_id())
+        format!("{}-regionalcompleteness", gb.get_run_id())
     }
 
     fn set_values(&mut self, gb: &GraphBroker) {
@@ -141,7 +147,9 @@ impl RegionalGrowth {
             CountType::Node | CountType::Bp => self.set_values_nodes(gb),
             CountType::Edge => self.set_values_edges(gb),
             CountType::All => {
-                unimplemented!("Regional growth for count type all has not been implemented yet")
+                unimplemented!(
+                    "Regional completeness for count type all has not been implemented yet"
+                )
             }
         }
     }
@@ -208,6 +216,8 @@ impl RegionalGrowth {
                                 uncovered_bps,
                                 self.coverage,
                             );
+                            let max_features =
+                                *growth.last().expect("growths contains at least one growth");
                             let x: Vec<f64> = (1..=growth.len()).map(|x| (x as f64)).collect();
                             let log_x: Vec<f64> = x
                                 .iter()
@@ -261,7 +271,16 @@ impl RegionalGrowth {
                                     );
                                 });
                             }
-                            (-params[0], r_squared)
+                            let alpha = -params[0];
+                            if alpha > 1.0 {
+                                let n = x.last().expect("x contains at least one value");
+                                let f_additional =
+                                    -10.0_f64.powf(params[1]) / (1.0 - alpha) * n.powf(1.0 - alpha);
+                                let ratio = max_features / (max_features + f_additional);
+                                (ratio, r_squared)
+                            } else {
+                                (-1.0, r_squared)
+                            }
                         };
                         Some((alpha, r_squared, *start + contig_start, *end + contig_start))
                     })
@@ -314,6 +333,8 @@ impl RegionalGrowth {
                                 uncovered_bps,
                                 self.coverage,
                             );
+                            let max_features =
+                                *growth.last().expect("growths contains at least one growth");
                             let x: Vec<f64> = (1..=growth.len())
                                 .map(|x| (x as f64).log10())
                                 .map(|x| {
@@ -340,7 +361,36 @@ impl RegionalGrowth {
                             let huber = HuberRegressor::from(x.clone(), y.clone());
                             let params = solve(huber);
                             let r_squared = calculate_r_squared(&x, &y, params[0], params[1]);
-                            (-params[0], r_squared)
+                            if self.log_windows {
+                                eprintln!(
+                                    "W {}-{}\ty = {} * x + {}, R² = {}\t",
+                                    start + contig_start,
+                                    end + contig_start,
+                                    params[0],
+                                    params[1],
+                                    r_squared
+                                );
+                                x.iter().zip(y.iter()).for_each(|(x_val, y_val)| {
+                                    eprintln!(
+                                        "W {}-{}\t{}\t{}\t{}",
+                                        start + contig_start,
+                                        end + contig_start,
+                                        x_val,
+                                        y_val,
+                                        10.0_f64.powf(params[1]) * x_val.powf(params[0])
+                                    );
+                                });
+                            }
+                            let alpha = -params[0];
+                            if alpha > 1.0 {
+                                let n = x.last().expect("x contains at least one value");
+                                let f_additional =
+                                    -10.0_f64.powf(params[1]) / (1.0 - alpha) * n.powf(1.0 - alpha);
+                                let ratio = max_features / (max_features + f_additional);
+                                (ratio, r_squared)
+                            } else {
+                                (-1.0, r_squared)
+                            }
                         };
                         (alpha, r_squared, *start + contig_start, *end + contig_start)
                     })

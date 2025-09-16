@@ -431,6 +431,11 @@ for (let key in objects.datasets) {
                 "domainMid": 1,
                 "range": ["#81e7ff", "#582948", "#ffcf67"],
             };
+        } else if (c.contains_outliers) {
+            scale = {
+                "scheme": "yellowgreenblue",
+                "domain": [0, 1]
+            };
         } else {
             scale = {
                 "scheme": "yellowgreenblue",
@@ -449,6 +454,26 @@ for (let key in objects.datasets) {
                   {"field": "y", "type": "quantitative", "title": c.label},
             ];
         }
+        let color;
+        if (c.contains_outliers) {
+            color = {
+                "condition": {
+                    "test": "datum.isOutlier",
+                    "value": "red"
+                },
+                "field": "y",
+                "type": "quantitative",
+                "scale": scale,
+                "title": c.label
+            };
+        } else {
+            color = {
+                    "field": "y",
+                    "type": "quantitative",
+                    "scale": scale,
+                    "title": c.label
+                };
+        }
         let mySpec = {
             "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
             "description": "Hexbin",
@@ -460,6 +485,9 @@ for (let key in objects.datasets) {
                     "select": "interval",
                     "bind": "scales"
                 }
+            ],
+            "transform": [
+                { "calculate": "datum.y < 0 ? true : false", "as": "isOutlier" }
             ],
             "mark": {
                 "type": "rect",
@@ -480,12 +508,7 @@ for (let key in objects.datasets) {
                 "x2": {
                     "field": "x2",
                 },
-                "color": {
-                    "field": "y",
-                    "type": "quantitative",
-                    "scale": scale,
-                    "title": c.label
-                },
+                "color": color,
                 "tooltip": tooltip
             },
             "config": {

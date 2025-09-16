@@ -4,7 +4,6 @@ use std::io::Write;
 use std::io::{Error, ErrorKind};
 use std::str::FromStr;
 
-use itertools::Itertools;
 /* external crate */
 use rayon::prelude::*;
 
