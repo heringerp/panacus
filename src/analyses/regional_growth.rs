@@ -144,6 +144,30 @@ impl RegionalGrowth {
                 unimplemented!("Regional growth for count type all has not been implemented yet")
             }
         }
+        let sum_lens = self
+            .values
+            .iter()
+            .map(|(_s, v)| v.iter().map(|(_, _, s, e)| (e - s) as u64).sum::<u64>())
+            .sum::<u64>() as f64;
+        let sum_r2 = self
+            .values
+            .iter()
+            .map(|(_s, v)| v.iter().map(|(_, r, s, e)| (e - s) as f64 * r).sum::<f64>())
+            .sum::<f64>();
+        let sum_alpha = self
+            .values
+            .iter()
+            .map(|(_s, v)| v.iter().map(|(a, _, s, e)| (e - s) as f64 * a).sum::<f64>())
+            .sum::<f64>();
+        let avg_r2 = sum_r2 / sum_lens;
+        let avg_alpha = sum_alpha / sum_lens;
+        log::info!(
+            "Calculated growth for {} with cov = {}, avg r2 = {}, avg alpha = {}",
+            self.count_type,
+            self.coverage,
+            avg_r2,
+            avg_alpha
+        );
     }
 
     fn set_values_nodes(&mut self, gb: &GraphBroker) {

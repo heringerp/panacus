@@ -152,6 +152,30 @@ impl RegionalCompleteness {
                 )
             }
         }
+        let sum_lens = self
+            .values
+            .iter()
+            .map(|(_s, v)| v.iter().map(|(_, _, s, e)| (e - s) as u64).sum::<u64>())
+            .sum::<u64>() as f64;
+        let sum_r2 = self
+            .values
+            .iter()
+            .map(|(_s, v)| v.iter().map(|(_, r, s, e)| (e - s) as f64 * r).sum::<f64>())
+            .sum::<f64>();
+        let sum_completeness = self
+            .values
+            .iter()
+            .map(|(_s, v)| v.iter().map(|(c, _, s, e)| (e - s) as f64 * c).sum::<f64>())
+            .sum::<f64>();
+        let avg_r2 = sum_r2 / sum_lens;
+        let avg_completeness = sum_completeness / sum_lens;
+        log::info!(
+            "Calculated completeness for {} with cov = {}, avg r2 = {}, avg completeness = {}",
+            self.count_type,
+            self.coverage,
+            avg_r2,
+            avg_completeness
+        );
     }
 
     fn set_values_nodes(&mut self, gb: &GraphBroker) {
