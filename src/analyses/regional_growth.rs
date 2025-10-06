@@ -226,13 +226,12 @@ impl RegionalGrowth {
                             } else {
                                 None
                             };
-                            let growth = gb.get_growth_for_subset(
+                            let hist = gb.get_hist_for_subset(
                                 self.count_type,
                                 &indices,
-                                uncovered_bps,
-                                self.coverage,
+                                uncovered_bps.clone(),
                             );
-                            let x: Vec<f64> = (1..=growth.len()).map(|x| (x as f64)).collect();
+                            let x: Vec<f64> = (1..hist.len()).map(|x| (x as f64)).collect();
                             let log_x: Vec<f64> = x
                                 .iter()
                                 .map(|x| x.log10())
@@ -244,12 +243,7 @@ impl RegionalGrowth {
                                     }
                                 })
                                 .collect();
-                            let y: Vec<f64> = vec![0.0]
-                                .into_iter()
-                                .chain(growth.into_iter())
-                                .tuple_windows()
-                                .map(|(x_prev, x_curr)| (x_curr - x_prev))
-                                .collect();
+                            let y = hist.into_iter().skip(1).collect::<Vec<f64>>();
                             let log_y: Vec<f64> = y
                                 .iter()
                                 .map(|y| y.log10())
@@ -261,31 +255,49 @@ impl RegionalGrowth {
                                     }
                                 })
                                 .collect();
-                            let huber = HuberRegressor::from(log_x.clone(), log_y.clone());
-                            let params = solve(huber);
-                            let r_squared =
-                                calculate_r_squared(&log_x, &log_y, params[0], params[1]);
+                            let n = 100;
                             if self.log_windows {
+                                let node_ids_to_names = gb.get_node_names();
+                                let nodes_text = window
+                                    .iter()
+                                    .map(|(idx, _)| *idx)
+                                    .collect::<HashSet<ItemId>>()
+                                    .into_iter()
+                                    .map(|id| str::from_utf8(&node_ids_to_names[&id]).unwrap())
+                                    .join("\t");
+                                let growth = gb.get_growth_for_subset(
+                                    self.count_type,
+                                    &indices,
+                                    uncovered_bps,
+                                    1,
+                                );
                                 eprintln!(
-                                    "W {}-{}\ty = {} * x + {}, R² = {}\t",
+                                    "N {}-{}\t{}",
                                     start + contig_start,
                                     end + contig_start,
-                                    params[0],
-                                    params[1],
-                                    r_squared
+                                    nodes_text
                                 );
-                                x.iter().zip(y.iter()).for_each(|(x_val, y_val)| {
-                                    eprintln!(
-                                        "W {}-{}\t{}\t{}\t{}",
-                                        start + contig_start,
-                                        end + contig_start,
-                                        x_val,
-                                        y_val,
-                                        10.0_f64.powf(params[1]) * x_val.powf(params[0])
-                                    );
-                                });
+                                x.iter().zip(y.iter()).zip(growth.iter()).for_each(
+                                    |((x_val, y_val), growth_val)| {
+                                        eprintln!(
+                                            "W {}-{}\t{}\t{}\t{}",
+                                            start + contig_start,
+                                            end + contig_start,
+                                            x_val,
+                                            y_val,
+                                            growth_val,
+                                        );
+                                    },
+                                );
                             }
-                            (-params[0], r_squared)
+                            let log_x2: Vec<f64> = log_x.iter().skip(1).take(n).copied().collect();
+                            let log_y2: Vec<f64> = log_y.iter().skip(1).take(n).copied().collect();
+                            let huber = HuberRegressor::from(log_x2.clone(), log_y2.clone());
+                            let params = solve(huber);
+                            let alpha = 2.0 + params[0];
+                            let r_squared =
+                                calculate_r_squared(&log_x2, &log_y2, params[0], params[1]);
+                            (alpha, r_squared)
                         };
                         Some((alpha, r_squared, *start + contig_start, *end + contig_start))
                     })

@@ -361,13 +361,24 @@ impl GraphBroker {
         uncovered_bps: Option<HashMap<u64, usize>>,
         coverage: usize,
     ) -> Vec<f64> {
-        log::debug!("Calculating growth for subset");
         let abacus = self.get_abacus_by_total(count);
         let hist =
             Hist::from_abacus_for_window(abacus, self.graph_aux.as_ref(), indices, uncovered_bps);
         let cov = Threshold::Absolute(coverage);
         let growth = hist.calc_growth_union(&cov);
         growth
+    }
+
+    pub fn get_hist_for_subset(
+        &self,
+        count: CountType,
+        indices: &Vec<usize>,
+        uncovered_bps: Option<HashMap<u64, usize>>,
+    ) -> Vec<f64> {
+        let abacus = self.get_abacus_by_total(count);
+        let hist =
+            Hist::from_abacus_for_window(abacus, self.graph_aux.as_ref(), indices, uncovered_bps);
+        hist.coverage.into_iter().map(|c| c as f64).collect()
     }
 
     pub fn get_path(&self, path_seg: &PathSegment) -> &Vec<(ItemId, Orientation)> {
@@ -593,8 +604,7 @@ impl GraphBroker {
                     && !intersects(include_coords, &(start, end))
                     && !intersects(exclude_coords, &(start, end))
                 {
-                    log::debug!("path {} does not intersect with subset coordinates {:?} nor with exclude coordinates {:?} and therefore is skipped from processing",
-    &path_seg, &include_coords, &exclude_coords);
+                    log::debug!("path {} does not intersect with subset coordinates {:?} nor with exclude coordinates {:?} and therefore is skipped from processing", &path_seg, &include_coords, &exclude_coords);
                     skip_path(&mut item_tables, &mut num_path, &mut buf);
                     continue;
                 }

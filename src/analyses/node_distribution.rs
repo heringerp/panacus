@@ -4,7 +4,7 @@ use itertools::multizip;
 use itertools::Itertools;
 
 use crate::{
-    graph_broker::{GraphBroker, ItemId},
+    graph_broker::GraphBroker,
     html_report::{AnalysisSection, Bin, ReportItem},
     util::get_default_plot_downloads,
     util::CountType,
@@ -109,8 +109,16 @@ impl NodeDistribution {
                 itertools::MinMaxResult::MinMax(min, max) => (min, max),
                 _ => panic!("Node distribution needs to have at least two countables"),
             };
-            let points: Vec<(ItemId, u32, f64)> = multizip((
-                node_ids,
+            let node_names = gb.get_node_names();
+            let points: Vec<(String, u32, f64)> = multizip((
+                node_ids
+                    .into_iter()
+                    .map(|id| {
+                        str::from_utf8(&node_names[&id])
+                            .expect("Can turn node name to string")
+                            .to_string()
+                    })
+                    .collect::<Vec<String>>(),
                 countables.into_iter().copied(),
                 node_lens.into_iter().copied(),
             ))

@@ -13,7 +13,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use time::{macros::format_description, OffsetDateTime};
 
-use crate::graph_broker::{GraphBroker, ItemId};
+use crate::graph_broker::GraphBroker;
 use crate::util::{get_default_plot_downloads, to_id};
 
 type JsVars = HashMap<String, HashMap<String, String>>;
@@ -737,7 +737,7 @@ impl ReportItem {
                 for (_i, bin) in bins.into_iter().enumerate() {
                     js_object.push_str(&format!("[",));
                     for node in bin.content.iter().take(threshold) {
-                        js_object.push_str(&format!("{},", node.0,));
+                        js_object.push_str(&format!("{},", node,));
                     }
                     if threshold < bin.content.len() {
                         js_object.push_str("-1, ");
@@ -876,7 +876,7 @@ pub struct Bin {
     pub size: u64,
     pub x: f64,
     pub y: f64,
-    pub content: Vec<ItemId>,
+    pub content: Vec<String>,
 }
 
 impl fmt::Display for Bin {
@@ -890,7 +890,7 @@ impl fmt::Display for Bin {
 }
 
 impl Bin {
-    pub fn hexbin(points: &Vec<(ItemId, u32, f64)>, nx: u32, ny: u32) -> Vec<Self> {
+    pub fn hexbin(points: &Vec<(String, u32, f64)>, nx: u32, ny: u32) -> Vec<Self> {
         let max_coverage = points
             .iter()
             .map(|(_i, c, _l)| *c)
@@ -931,7 +931,7 @@ impl Bin {
                         content: Vec::new(),
                     })
                     .content
-                    .push(point.0);
+                    .push(point.0.clone());
             } else {
                 bins.entry((
                     true,
@@ -945,7 +945,7 @@ impl Bin {
                     content: Vec::new(),
                 })
                 .content
-                .push(point.0);
+                .push(point.0.clone());
             }
         }
         let mut bins: Vec<Bin> = bins.into_values().collect();
