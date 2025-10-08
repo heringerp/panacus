@@ -32,7 +32,11 @@ serde_yaml = "0.9.21"
 serde = { version = "1.0", features = ["derive"] }
 memchr = "2.6.2"
 kodama = "0.3.0"
-serde_json = "1.0.140"
+serde_json = "1.0.145"
+shadow-rs = { version = "1.4.0", features = ["metadata"] }
+
+[build-dependencies]
+shadow-rs = "1.4.0"
 
 [dev-dependencies]
 tempfile = "3.13"

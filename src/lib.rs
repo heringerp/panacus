@@ -22,6 +22,10 @@ use html_report::AnalysisSection;
 use std::fs::File;
 use std::io::BufReader;
 
+use shadow_rs::shadow;
+
+shadow!(build);
+
 #[macro_export]
 macro_rules! clap_enum_variants {
     // Credit: Johan Andersson (https://github.com/repi)
@@ -109,6 +113,7 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
                 .global(true)
                 .help("Set the number of threads used (default: use all threads)"),
         )
+        .long_version(build::CLAP_LONG_VERSION)
         .get_matches();
 
     set_verbosity(&args);

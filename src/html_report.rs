@@ -15,6 +15,9 @@ use time::{macros::format_description, OffsetDateTime};
 
 use crate::graph_broker::{GraphBroker, ItemId};
 use crate::util::{get_default_plot_downloads, to_id};
+use shadow_rs::shadow;
+
+shadow!(build);
 
 type JsVars = HashMap<String, HashMap<String, String>>;
 type RenderedHTML = Result<(String, JsVars), RenderError>;
@@ -303,9 +306,11 @@ impl AnalysisSection {
         }
 
         let mut vars = HashMap::from([("analyses", to_json(analyses))]);
-        let hash = option_env!("GIT_HASH").unwrap_or("nogit");
-        let version = env!("CARGO_PKG_VERSION");
-        let version_text = format!("v{version}-{hash}");
+        //let hash = option_env!("GIT_HASH").unwrap_or("nogit");
+        // let hash = build::COMMIT_HASH;
+        // let version = env!("CARGO_PKG_VERSION");
+        let version_text = build::VERSION;
+        // let version_text = format!("v{version}-{hash}");
         vars.insert("version", to_json(version_text));
         let now = OffsetDateTime::now_utc();
         vars.insert(
