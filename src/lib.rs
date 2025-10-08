@@ -158,10 +158,12 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
             let coverage = args.get_one::<String>("coverage").cloned();
             let quorum = args.get_one::<String>("quorum").cloned();
             let add_hist = args.get_flag("hist");
+            let add_alpha = args.get_flag("alpha");
             let parameter = AnalysisParameter::Growth {
                 coverage,
                 quorum,
                 add_hist,
+                add_alpha,
             };
             let mut growth = analyses::growth::Growth::from_parameter(parameter);
             let table = growth.generate_table_from_hist(

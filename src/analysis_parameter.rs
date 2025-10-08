@@ -166,6 +166,8 @@ pub enum AnalysisParameter {
         quorum: Option<String>,
         #[serde(default)]
         add_hist: bool,
+        #[serde(default)]
+        add_alpha: bool,
     },
     Table {
         #[serde(default)]

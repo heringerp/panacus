@@ -3,8 +3,7 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufReader;
 
-use itertools::Itertools;
-use ml_helpers::linear_regression::huber_regressor::{solve_with_logging, HuberRegressor};
+use ml_helpers::linear_regression::huber_regressor::{solve, HuberRegressor};
 use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
 
 use crate::analysis_parameter::AnalysisParameter;
@@ -42,6 +41,7 @@ impl Analysis for Growth {
         let growths = &self.inner.as_ref().unwrap().growths;
         let hist_aux = &self.inner.as_ref().unwrap().hist_aux;
         let comments = &self.inner.as_ref().unwrap().comments;
+        let heaps_curves = &self.inner.as_ref().unwrap().heaps_curves;
         let mut res = String::new();
         for c in comments {
             res.push_str(str::from_utf8(&c[..])?);
@@ -69,7 +69,21 @@ impl Analysis for Growth {
                 .collect::<Vec<_>>(),
         };
 
-        if let AnalysisParameter::Growth { add_hist, .. } = self.parameter {
+        if let AnalysisParameter::Growth {
+            add_hist,
+            add_alpha,
+            ..
+        } = self.parameter
+        {
+            if add_alpha {
+                if let Some(heap_curves) = heaps_curves {
+                    for ((alpha, _heaps), (count, _growth)) in
+                        heap_curves.iter().zip(growths.iter())
+                    {
+                        res.push_str(&format!("# alpha ({}): {}\n", count.to_string(), alpha));
+                    }
+                }
+            }
             if add_hist {
                 for h in hists {
                     output_columns.push(h.coverage.iter().map(|x| *x as f64).collect());
@@ -198,6 +212,7 @@ impl Growth {
             quorum,
             coverage,
             add_hist,
+            add_alpha,
         } = &self.parameter
         {
             log::info!("reporting hist table");
@@ -235,7 +250,7 @@ impl Growth {
             let mut output_columns: Vec<Vec<f64>> = Vec::new();
 
             if *add_hist {
-                for h in hists {
+                for h in hists.iter() {
                     output_columns.push(h.coverage.iter().map(|x| *x as f64).collect());
                     header_cols.push(vec![
                         "hist".to_string(),
@@ -246,9 +261,14 @@ impl Growth {
                 }
             }
 
-            for (count, g) in growths {
+            for ((count, g), hist) in growths.iter().zip(hists.iter()) {
                 output_columns.extend(g.clone());
                 let m = hist_aux.coverage.len();
+                if *add_alpha {
+                    let hist: Vec<f64> = hist.coverage.iter().map(|x| *x as f64).collect();
+                    let (alpha, _) = get_regression(&hist);
+                    res.push_str(&format!("# alpha ({}): {}\n", count.to_string(), alpha));
+                }
                 header_cols.extend(
                     std::iter::repeat("growth")
                         .take(m)
@@ -296,52 +316,24 @@ impl Growth {
                     .par_bridge()
                     .map(|h| (h.count, h.calc_all_growths(&hist_aux)))
                     .collect();
+                let hists = gb.get_hists();
                 let heaps_curves = hist_aux.has_full_growth_at_idx().map(|index| {
                     log::info!("Calculating heaps law");
                     let heaps_curves: Vec<_> = growths
                         .iter()
-                        .map(|(_count_type, growth)| {
+                        .zip(hists.iter())
+                        .map(|((_count_type, growth), (_count_type2, hist))| {
                             let growth = growth[index].clone();
                             let growth_len = growth.len();
                             let growth_last = *growth.last().unwrap();
-                            let mut x: Vec<f64> = (1..=growth_len)
-                                .map(|x| (x as f64).log10())
-                                .map(|x| {
-                                    if x.is_infinite() && x.is_sign_negative() {
-                                        -100000.0
-                                    } else {
-                                        x
-                                    }
-                                })
-                                .collect();
-                            let mut y: Vec<f64> = vec![0.0]
-                                .into_iter()
-                                .chain(growth.into_iter())
-                                .tuple_windows()
-                                .map(|(x_prev, x_curr)| (x_curr - x_prev).log10())
-                                .map(|x| {
-                                    if x.is_infinite() && x.is_sign_negative() {
-                                        -100000.0
-                                    } else {
-                                        x
-                                    }
-                                })
-                                .collect();
-                            // Remove NaN values
-                            x.remove(0);
-                            x.remove(0);
-                            y.remove(0);
-                            y.remove(0);
-                            log::info!("Regressing huber, {} - {}", x.len(), y.len());
-                            let huber = HuberRegressor::from(x.clone(), y.clone());
-                            let params = solve_with_logging(huber);
-                            log::info!("Huber done");
-                            let alpha = -params[0];
-                            if alpha >= 1.0 {
+                            let hist: Vec<f64> = hist.coverage.iter().map(|x| *x as f64).collect();
+                            let (alpha, offset) = get_regression(&hist);
+                            if alpha >= 10.0 {
+                                // TODO change 10 back to 1
                                 (alpha, None)
                             } else {
                                 let gamma = 1.0 - alpha;
-                                let k_2 = 10.0_f64.powf(params[1]);
+                                let k_2 = 10.0_f64.powf(offset);
                                 let k_1 = k_2 / gamma;
                                 let curve_values = (1..=growth_len)
                                     .map(|x| (x as f64).powf(gamma) * k_1)
@@ -368,6 +360,40 @@ impl Growth {
             panic!("Growth should always contain growth parameter")
         }
     }
+}
+
+fn get_regression(hist: &Vec<f64>) -> (f64, f64) {
+    let x: Vec<f64> = (1..hist.len()).map(|x| (x as f64)).collect();
+    let log_x: Vec<f64> = x
+        .iter()
+        .map(|x| x.log10())
+        .map(|x| {
+            if x.is_infinite() && x.is_sign_negative() {
+                -100000.0
+            } else {
+                x
+            }
+        })
+        .collect();
+    let y = hist.iter().skip(1).copied().collect::<Vec<f64>>();
+    let log_y: Vec<f64> = y
+        .iter()
+        .map(|y| y.log10())
+        .map(|y| {
+            if y.is_infinite() && y.is_sign_negative() {
+                -100000.0
+            } else {
+                y
+            }
+        })
+        .collect();
+    let n = 100;
+    let log_x2: Vec<f64> = log_x.iter().skip(1).take(n).copied().collect();
+    let log_y2: Vec<f64> = log_y.iter().skip(1).take(n).copied().collect();
+    let huber = HuberRegressor::from(log_x2.clone(), log_y2.clone());
+    let params = solve(huber);
+    let alpha = 2.0 + params[0];
+    (alpha, params[1])
 }
 
 struct InnerGrowth {
