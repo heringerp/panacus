@@ -1,4 +1,5 @@
 use core::{panic, str};
+use std::cmp;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufReader;
@@ -327,20 +328,21 @@ impl Growth {
                             let growth_len = growth.len();
                             let growth_last = *growth.last().unwrap();
                             let hist: Vec<f64> = hist.coverage.iter().map(|x| *x as f64).collect();
-                            let (alpha, offset) = get_regression(&hist);
+                            let x1 = 2.0f64;
+                            let y1 = growth[1];
+                            let x2 = growth.len() as f64 - 1.0;
+                            let y2 = growth_last;
+                            let (alpha, _offset) = get_regression(&hist);
                             if alpha >= 10.0 {
                                 // TODO change 10 back to 1
                                 (alpha, None)
                             } else {
                                 let gamma = 1.0 - alpha;
-                                let k_2 = 10.0_f64.powf(offset);
-                                let k_1 = k_2 / gamma;
+                                let k = (y1 - y2) / (x1.powf(gamma) - x2.powf(gamma));
+                                let c = y1 - k * x1.powf(gamma);
                                 let curve_values = (1..=growth_len)
-                                    .map(|x| (x as f64).powf(gamma) * k_1)
+                                    .map(|x| (x as f64).powf(gamma) * k + c)
                                     .collect::<Vec<_>>();
-                                let diff = curve_values.last().unwrap() - growth_last;
-                                let curve_values =
-                                    curve_values.into_iter().map(|x| x - diff).collect();
                                 (alpha, Some(curve_values))
                             }
                         })
@@ -387,7 +389,7 @@ fn get_regression(hist: &Vec<f64>) -> (f64, f64) {
             }
         })
         .collect();
-    let n = 100;
+    let n = cmp::max(hist.len() / 2, 10);
     let log_x2: Vec<f64> = log_x.iter().skip(1).take(n).copied().collect();
     let log_y2: Vec<f64> = log_y.iter().skip(1).take(n).copied().collect();
     let huber = HuberRegressor::from(log_x2.clone(), log_y2.clone());
