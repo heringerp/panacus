@@ -237,6 +237,7 @@ impl AnalysisSection {
         sections: Vec<Self>,
         registry: &mut Handlebars,
         filename: &str,
+        config: &str,
     ) -> Result<String, RenderError> {
         if !registry.has_template("report") {
             registry.register_template_string("report", from_utf8(REPORT_HBS).unwrap())?;
@@ -244,7 +245,7 @@ impl AnalysisSection {
 
         let tree = Self::get_tree(&sections, registry)?;
 
-        let (content, js_objects) = Self::generate_report_content(sections, registry)?;
+        let (content, js_objects) = Self::generate_report_content(sections, registry, config)?;
         let mut vars = Self::get_variables();
         vars.insert("content", content);
         vars.insert("data_hook", get_js_objects_string(js_objects));
@@ -372,7 +373,11 @@ impl AnalysisSection {
         vars
     }
 
-    fn generate_report_content(sections: Vec<Self>, registry: &mut Handlebars) -> RenderedHTML {
+    fn generate_report_content(
+        sections: Vec<Self>,
+        registry: &mut Handlebars,
+        config: &str,
+    ) -> RenderedHTML {
         if !registry.has_template("report_content") {
             registry.register_template_string(
                 "report_content",
@@ -389,10 +394,15 @@ impl AnalysisSection {
             })
             .collect::<Vec<String>>();
         let text = registry.render("report_content", &sections)?;
-        let js_objects = js_objects
+        let mut js_objects = js_objects
             .into_iter()
             .reduce(combine_vars)
             .expect("Report needs to contain at least one item");
+        let config_content = format!("`{}`", config);
+        js_objects.insert(
+            "config".to_string(),
+            HashMap::from([("first".to_string(), config_content)]),
+        );
         Ok((text, js_objects))
     }
 }
