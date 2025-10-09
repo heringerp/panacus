@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::BufReader;
 
+use anyhow::anyhow;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
 use crate::analysis_parameter::AnalysisRun;
@@ -64,6 +65,6 @@ fn parse_report_args(args: &ArgMatches) -> Result<Vec<AnalysisRun>, anyhow::Erro
 # For more information see: https://github.com/codialab/panacus/wiki
                 "
         );
-        Ok(Vec::new())
+        Err(anyhow!("Missing YAML configuration!"))
     }
 }
