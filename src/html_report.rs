@@ -15,6 +15,9 @@ use time::{macros::format_description, OffsetDateTime};
 
 use crate::graph_broker::GraphBroker;
 use crate::util::{get_default_plot_downloads, to_id};
+use shadow_rs::shadow;
+
+shadow!(build);
 
 type JsVars = HashMap<String, HashMap<String, String>>;
 type RenderedHTML = Result<(String, JsVars), RenderError>;
@@ -237,6 +240,7 @@ impl AnalysisSection {
         sections: Vec<Self>,
         registry: &mut Handlebars,
         filename: &str,
+        config: &str,
     ) -> Result<String, RenderError> {
         if !registry.has_template("report") {
             registry.register_template_string("report", from_utf8(REPORT_HBS).unwrap())?;
@@ -244,7 +248,7 @@ impl AnalysisSection {
 
         let tree = Self::get_tree(&sections, registry)?;
 
-        let (content, js_objects) = Self::generate_report_content(sections, registry)?;
+        let (content, js_objects) = Self::generate_report_content(sections, registry, config)?;
         let mut vars = Self::get_variables();
         vars.insert("content", content);
         vars.insert("data_hook", get_js_objects_string(js_objects));
@@ -306,9 +310,11 @@ impl AnalysisSection {
         }
 
         let mut vars = HashMap::from([("analyses", to_json(analyses))]);
-        let hash = option_env!("GIT_HASH").unwrap_or("nogit");
-        let version = env!("CARGO_PKG_VERSION");
-        let version_text = format!("v{version}-{hash}");
+        //let hash = option_env!("GIT_HASH").unwrap_or("nogit");
+        // let hash = build::COMMIT_HASH;
+        // let version = env!("CARGO_PKG_VERSION");
+        let version_text = build::VERSION;
+        // let version_text = format!("v{version}-{hash}");
         vars.insert("version", to_json(version_text));
         let now = OffsetDateTime::now_utc();
         vars.insert(
@@ -370,7 +376,11 @@ impl AnalysisSection {
         vars
     }
 
-    fn generate_report_content(sections: Vec<Self>, registry: &mut Handlebars) -> RenderedHTML {
+    fn generate_report_content(
+        sections: Vec<Self>,
+        registry: &mut Handlebars,
+        config: &str,
+    ) -> RenderedHTML {
         if !registry.has_template("report_content") {
             registry.register_template_string(
                 "report_content",
@@ -387,10 +397,15 @@ impl AnalysisSection {
             })
             .collect::<Vec<String>>();
         let text = registry.render("report_content", &sections)?;
-        let js_objects = js_objects
+        let mut js_objects = js_objects
             .into_iter()
             .reduce(combine_vars)
             .expect("Report needs to contain at least one item");
+        let config_content = format!("`{}`", config);
+        js_objects.insert(
+            "config".to_string(),
+            HashMap::from([("first".to_string(), config_content)]),
+        );
         Ok((text, js_objects))
     }
 }

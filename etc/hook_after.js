@@ -50,6 +50,14 @@ function post_to_vega_editor(window, data) {
     setTimeout(send, step);
 }
 
+document.getElementById('btn-download-config').onclick = function() {
+    let blob = new Blob([objects.config.first], {type: 'text/plain'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'config.yaml';
+    a.click();
+}
+
 for (let key in objects.datasets) {
     let element = objects.datasets[key];
     if (element instanceof Bar) {

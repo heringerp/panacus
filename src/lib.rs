@@ -9,6 +9,7 @@ mod util;
 
 use env_logger::Builder;
 use log::LevelFilter;
+use std::io::Read;
 use std::{fmt::Debug, io::Write};
 use thiserror::Error;
 
@@ -21,6 +22,10 @@ use html_report::AnalysisSection;
 
 use std::fs::File;
 use std::io::BufReader;
+
+use shadow_rs::shadow;
+
+shadow!(build);
 
 #[macro_export]
 macro_rules! clap_enum_variants {
@@ -109,6 +114,7 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
                 .global(true)
                 .help("Set the number of threads used (default: use all threads)"),
         )
+        .long_version(build::CLAP_LONG_VERSION)
         .get_matches();
 
     set_verbosity(&args);
@@ -118,6 +124,7 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
     let mut shall_write_html = false;
     let mut dry_run = false;
     let mut json = false;
+    let mut config_content = "EMPTY".to_string();
 
     if let Some(args) = args.subcommand_matches("render") {
         let json_files: Vec<String> = args
@@ -135,8 +142,12 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
             full_report.extend(report);
         }
         let mut registry = handlebars::Handlebars::new();
-        let report_text =
-            AnalysisSection::generate_report(full_report, &mut registry, &json_files[0])?;
+        let report_text = AnalysisSection::generate_report(
+            full_report,
+            &mut registry,
+            &json_files[0],
+            "-- GENERATED VIA RENDER --",
+        )?;
         writeln!(&mut out, "{report_text}")?;
         return Ok(());
     }
@@ -181,6 +192,14 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
         if let Some(report_matches) = args.subcommand_matches("report") {
             dry_run = report_matches.get_flag("dry_run");
             json = report_matches.get_flag("json");
+            let config = report_matches
+                .get_one::<String>("yaml_file")
+                .expect("Contains required yaml config")
+                .to_owned();
+            let f = File::open(config)?;
+            let mut reader = BufReader::new(f);
+            config_content = String::new();
+            reader.read_to_string(&mut config_content)?;
         }
     }
     if let Some(hist) = commands::hist::get_instructions(&args) {
@@ -213,7 +232,13 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
 
     // ride on!
     if !dry_run {
-        execute_pipeline(instructions, &mut out, shall_write_html, json)?;
+        execute_pipeline(
+            instructions,
+            &mut out,
+            shall_write_html,
+            json,
+            &config_content,
+        )?;
     } else {
         println!("{:#?}", instructions);
     }
@@ -239,6 +264,7 @@ pub fn execute_pipeline<W: Write>(
     out: &mut std::io::BufWriter<W>,
     shall_write_html: bool,
     json: bool,
+    config_content: &str,
 ) -> anyhow::Result<()> {
     if instructions.is_empty() {
         log::warn!("No instructions supplied");
@@ -296,8 +322,12 @@ pub fn execute_pipeline<W: Write>(
         writeln!(out, "{json_text}")?;
     } else if shall_write_html {
         let mut registry = handlebars::Handlebars::new();
-        let report =
-            AnalysisSection::generate_report(report, &mut registry, "<Placeholder Filename>")?;
+        let report = AnalysisSection::generate_report(
+            report,
+            &mut registry,
+            "<Placeholder Filename>",
+            config_content,
+        )?;
         writeln!(out, "{report}")?;
     } else {
         if let Task::Analysis(analysis) = instructions.last_mut().unwrap() {
