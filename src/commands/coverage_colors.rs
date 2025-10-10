@@ -3,7 +3,7 @@ use clap::{arg, ArgMatches, Command};
 use crate::analysis_parameter::{AnalysisParameter, AnalysisRun, Grouping};
 
 pub fn get_subcommand() -> Command {
-    Command::new("info")
+    Command::new("coverage-colors")
         .about("Return general graph and paths info")
         .args(&[
             arg!(gfa_file: <GFA_FILE> "graph in GFA1 format, accepts also compressed (.gz) file"),
@@ -16,10 +16,10 @@ pub fn get_subcommand() -> Command {
 }
 
 pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, anyhow::Error>> {
-    if let Some(args) = args.subcommand_matches("info") {
+    if let Some(args) = args.subcommand_matches("coverage-colors") {
         let graph = args
             .get_one::<String>("gfa_file")
-            .expect("info subcommand has gfa file")
+            .expect("coverage-colors subcommand has gfa file")
             .to_owned();
         let subset = args
             .get_one::<String>("subset")
@@ -44,7 +44,7 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, an
             exclude,
             grouping,
             false,
-            vec![AnalysisParameter::Info],
+            vec![AnalysisParameter::CoverageColors],
         )];
         log::info!("{parameters:?}");
         Some(Ok(parameters))

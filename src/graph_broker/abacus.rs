@@ -1112,6 +1112,28 @@ impl AbacusByGroup {
         Ok(())
     }
 
+    pub fn get_node_coverages(&self) -> HashMap<ItemId, u64> {
+        let mut result = HashMap::new();
+
+        match self.count {
+            CountType::Node => {
+                let mut it = self.r.iter().tuple_windows().enumerate();
+                // ignore first entry
+                it.next();
+                for (i, (&start, &end)) in it {
+                    let id = ItemId(i as ItemIdSize);
+                    let total = end - start;
+                    result.insert(id, total as u64);
+                }
+            }
+            CountType::Edge | CountType::Bp | CountType::All => {
+                unreachable!("inadmissible count type")
+            }
+        };
+
+        result
+    }
+
     pub fn to_tsv<W: Write>(
         &self,
         total: bool,

@@ -6,6 +6,7 @@ use strum_macros::{EnumIter, EnumString, EnumVariantNames};
 
 use serde::{Deserialize, Serialize};
 
+use crate::analyses::coverage_colors::CoverageColors;
 use crate::analyses::regional_completeness::RegionalCompleteness;
 use crate::analyses::regional_count::RegionalCount;
 use crate::analyses::regional_degree::RegionalDegree;
@@ -240,6 +241,7 @@ pub enum AnalysisParameter {
         #[serde(default)]
         count_type: CountType,
     },
+    CoverageColors,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
@@ -316,6 +318,9 @@ impl AnalysisParameter {
             }
             r @ Self::RegionalCount { .. } => {
                 get_analysis_task!(RegionalCount, r)
+            }
+            c @ Self::CoverageColors => {
+                get_analysis_task!(CoverageColors, c)
             }
             Self::Custom { name, file } => {
                 (vec![Task::CustomSection { name, file }], HashSet::new())

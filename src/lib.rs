@@ -95,6 +95,7 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
         .subcommand(commands::table::get_subcommand())
         .subcommand(commands::node_distribution::get_subcommand())
         .subcommand(commands::similarity::get_subcommand())
+        .subcommand(commands::coverage_colors::get_subcommand())
         .subcommand_required(true)
         .arg(
             Arg::new("threads")
@@ -213,6 +214,9 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
     // }
     if let Some(info) = commands::info::get_instructions(&args) {
         instructions.extend(info?);
+    }
+    if let Some(coverage_colors) = commands::coverage_colors::get_instructions(&args) {
+        instructions.extend(coverage_colors?);
     }
     if let Some(ordered_histgrowth) = commands::ordered_histgrowth::get_instructions(&args) {
         instructions.extend(ordered_histgrowth?);

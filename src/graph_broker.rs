@@ -167,6 +167,13 @@ impl GraphBroker {
         tuples.into_iter().map(|(name, id)| (id, name)).collect()
     }
 
+    pub fn get_node_coverages(&self) -> HashMap<ItemId, u64> {
+        self.group_abacus
+            .as_ref()
+            .expect("Contains group abacus")
+            .get_node_coverages()
+    }
+
     fn from_gfa(input_requirements: &HashSet<Req>, nice: bool) -> Self {
         let count_type = if Self::contains_at_least_two(input_requirements) {
             CountType::All

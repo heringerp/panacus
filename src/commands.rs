@@ -1,3 +1,4 @@
+pub mod coverage_colors;
 pub mod growth;
 pub mod hist;
 pub mod histgrowth;
