@@ -11,6 +11,7 @@ use crate::analyses::regional_completeness::RegionalCompleteness;
 use crate::analyses::regional_count::RegionalCount;
 use crate::analyses::regional_degree::RegionalDegree;
 use crate::analyses::regional_growth::RegionalGrowth;
+use crate::analyses::section_growth::SectionGrowth;
 use crate::analyses::ConstructibleAnalysis;
 use crate::analyses::{
     coverage_line::CoverageLine, growth::Growth, info::Info, node_distribution::NodeDistribution,
@@ -234,6 +235,11 @@ pub enum AnalysisParameter {
         #[serde(default)]
         log_windows: bool,
     },
+    SectionGrowth {
+        #[serde(default)]
+        count_type: CountType,
+        sections: String,
+    },
     RegionalCount {
         reference: String,
         #[serde(default = "get_window_size")]
@@ -321,6 +327,9 @@ impl AnalysisParameter {
             }
             c @ Self::CoverageColors => {
                 get_analysis_task!(CoverageColors, c)
+            }
+            s @ Self::SectionGrowth { .. } => {
+                get_analysis_task!(SectionGrowth, s)
             }
             Self::Custom { name, file } => {
                 (vec![Task::CustomSection { name, file }], HashSet::new())

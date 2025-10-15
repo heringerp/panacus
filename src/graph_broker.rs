@@ -25,12 +25,13 @@ use crate::{
 };
 
 mod abacus;
+mod coverage_matrix;
 mod graph;
 mod hist;
 mod util;
 
-pub use abacus::AbacusByGroup;
 pub use abacus::GraphMaskParameters;
+pub use coverage_matrix::CoverageMatrix;
 pub use graph::Edge;
 pub use graph::ItemId;
 pub use graph::Orientation;
@@ -59,7 +60,7 @@ pub struct GraphBroker {
     graph_mask: Option<GraphMask>,
 
     total_abaci: Option<HashMap<CountType, AbacusByTotal>>,
-    group_abacus: Option<AbacusByGroup>,
+    group_abacus: Option<CoverageMatrix>,
     hists: Option<HashMap<CountType, Hist>>,
     csc_abacus: bool,
     paths: HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
@@ -351,7 +352,7 @@ impl GraphBroker {
         self.hists.as_ref().unwrap()
     }
 
-    pub fn get_abacus_by_group(&self) -> &AbacusByGroup {
+    pub fn get_abacus_by_group(&self) -> &CoverageMatrix {
         Self::check_and_error(self.group_abacus.as_ref(), "abacus_by_group");
         self.group_abacus.as_ref().unwrap()
     }
@@ -386,6 +387,15 @@ impl GraphBroker {
         let hist =
             Hist::from_abacus_for_window(abacus, self.graph_aux.as_ref(), indices, uncovered_bps);
         hist.coverage.into_iter().map(|c| c as f64).collect()
+    }
+
+    pub fn get_hist_for_path_subset(
+        &self,
+        count: CountType,
+        path_indices: &Vec<usize>,
+        uncovered_bps: Option<HashMap<u64, usize>>,
+    ) -> Vec<f64> {
+        Vec::new()
     }
 
     pub fn get_path(&self, path_seg: &PathSegment) -> &Vec<(ItemId, Orientation)> {
@@ -449,7 +459,7 @@ impl GraphBroker {
     fn set_abacus_by_group(&mut self, count: CountType) -> Result<(), Error> {
         // let mut abaci_by_group = HashMap::new();
         let mut data = bufreader_from_compressed_gfa(&self.gfa_file);
-        let abacus = AbacusByGroup::from_gfa(
+        let abacus = CoverageMatrix::from_gfa(
             &mut data,
             self.graph_mask.as_ref().unwrap(),
             self.graph_aux.as_ref().unwrap(),
@@ -512,6 +522,10 @@ impl GraphBroker {
         let shall_calculate_edge =
             self.count_type == CountType::All || self.count_type == CountType::Edge;
         (count_types_not_edge, shall_calculate_edge)
+    }
+
+    pub fn get_hist_from_abacus(&self, abacus: &AbacusByTotal) -> Hist {
+        Hist::from_abacus(abacus, self.graph_aux.as_ref())
     }
 
     pub fn set_abacus_from_gfa(

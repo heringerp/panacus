@@ -114,7 +114,7 @@ impl ItemTable {
 //     }
 // }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ActiveTable {
     pub items: Vec<bool>,
     // intervall container + item len vector

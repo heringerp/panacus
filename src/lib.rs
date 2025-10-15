@@ -96,6 +96,7 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
         .subcommand(commands::node_distribution::get_subcommand())
         .subcommand(commands::similarity::get_subcommand())
         .subcommand(commands::coverage_colors::get_subcommand())
+        .subcommand(commands::section_growth::get_subcommand())
         .subcommand_required(true)
         .arg(
             Arg::new("threads")
@@ -217,6 +218,9 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
     }
     if let Some(coverage_colors) = commands::coverage_colors::get_instructions(&args) {
         instructions.extend(coverage_colors?);
+    }
+    if let Some(section_growth) = commands::section_growth::get_instructions(&args) {
+        instructions.extend(section_growth?);
     }
     if let Some(ordered_histgrowth) = commands::ordered_histgrowth::get_instructions(&args) {
         instructions.extend(ordered_histgrowth?);

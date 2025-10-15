@@ -10,6 +10,7 @@ pub mod regional_count;
 pub mod regional_degree;
 pub mod regional_growth;
 pub mod regional_helpers;
+pub mod section_growth;
 pub mod similarity;
 pub mod table;
 

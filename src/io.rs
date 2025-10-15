@@ -10,7 +10,7 @@ use rayon::prelude::*;
 use strum_macros::{EnumString, EnumVariantNames};
 
 /* internal use */
-use crate::graph_broker::{AbacusByGroup, PathSegment, ThresholdContainer};
+use crate::graph_broker::{CoverageMatrix, PathSegment, ThresholdContainer};
 use crate::util::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, EnumString, EnumVariantNames)]
@@ -555,7 +555,7 @@ pub fn write_metadata_comments() -> anyhow::Result<String> {
 }
 
 pub fn write_ordered_histgrowth_table(
-    abacus_group: &AbacusByGroup,
+    abacus_group: &CoverageMatrix,
     hist_aux: &ThresholdContainer,
     node_lens: &Vec<u32>,
 ) -> anyhow::Result<String> {
@@ -590,7 +590,7 @@ pub fn write_ordered_histgrowth_table(
     header_cols.extend(
         std::iter::repeat("ordered-growth")
             .take(m)
-            .zip(std::iter::repeat(abacus_group.count).take(m))
+            .zip(std::iter::repeat(abacus_group.get_count()).take(m))
             .zip(hist_aux.coverage.iter())
             .zip(&hist_aux.quorum)
             .map(|(((p, t), c), q)| {
@@ -598,7 +598,7 @@ pub fn write_ordered_histgrowth_table(
             })
             .collect::<Vec<Vec<String>>>(),
     );
-    let table = write_ordered_table(&header_cols, &output_columns, &abacus_group.groups)?;
+    let table = write_ordered_table(&header_cols, &output_columns, &abacus_group.get_groups())?;
     res.push_str(&table);
     Ok(res)
 }

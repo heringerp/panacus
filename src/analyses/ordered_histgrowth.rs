@@ -75,7 +75,7 @@ impl Analysis for OrderedHistgrowth {
                 .to_lowercase()
                 .replace(&[' ', '|', '\\'], "-")
         );
-        let labels = dm.unwrap().get_abacus_by_group().groups.clone();
+        let labels = dm.unwrap().get_abacus_by_group().get_groups().clone();
         let growth_tabs = vec![AnalysisSection {
             id: format!("{id_prefix}"),
             analysis: "Ordered Growth".to_string(),

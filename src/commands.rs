@@ -7,5 +7,6 @@ pub mod node_distribution;
 pub mod ordered_histgrowth;
 pub mod render;
 pub mod report;
+pub mod section_growth;
 pub mod similarity;
 pub mod table;

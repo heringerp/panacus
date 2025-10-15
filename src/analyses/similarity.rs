@@ -118,9 +118,9 @@ impl Similarity {
 
     fn set_table(&mut self, gb: Option<&crate::graph_broker::GraphBroker>) {
         let gb = gb.as_ref().unwrap();
-        let r = &gb.get_abacus_by_group().r;
-        let c = &gb.get_abacus_by_group().c;
-        let mut labels = gb.get_abacus_by_group().groups.clone();
+        let r = gb.get_abacus_by_group().get_r();
+        let c = gb.get_abacus_by_group().get_c();
+        let mut labels = gb.get_abacus_by_group().get_groups().clone();
 
         let tuples: Vec<(_, _)> = r.iter().map(|x| *x as usize).tuple_windows().collect();
 
