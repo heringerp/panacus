@@ -49,19 +49,22 @@ impl CoverageMatrix {
 
     pub fn get_nodes_of_paths(&self, paths: &Vec<usize>) -> Vec<usize> {
         let mut indices = Vec::new();
+        log::info!("Start getting nodes");
         for (i, c) in self.c.iter().enumerate() {
             if paths.contains(&(*c as usize)) {
                 indices.push(i);
             }
         }
+        log::info!("Gotten {} indices", indices.len());
+        let mut progress_index = 0usize;
         let mut nodes = Vec::new();
-        'outer: for (i, (s, e)) in self.r.iter().tuple_windows().enumerate() {
-            for index in indices.iter() {
-                if index >= s && index < e {
-                    nodes.push(i);
-                    // As soon as node is added, continue, don't try to add that node again
-                    continue 'outer;
-                }
+        for (i, (s, e)) in self.r.iter().tuple_windows().enumerate() {
+            while progress_index < indices.len()
+                && indices[progress_index] >= *s
+                && indices[progress_index] < *e
+            {
+                nodes.push(i);
+                progress_index += 1;
             }
         }
         nodes

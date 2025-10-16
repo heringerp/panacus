@@ -158,25 +158,28 @@ impl SectionGrowth {
         let mut current_index = first_group.len();
         let mut already_seen_nodes: HashSet<usize> = non_zero_nodes.into_iter().collect();
         for section in self.section_order.iter().skip(1) {
+            log::info!("Handling section {}", section);
             let paths = &self.sections[section];
             let nodes: HashSet<usize> = gb
                 .get_abacus_by_group()
                 .get_nodes_of_paths(paths)
                 .into_iter()
                 .collect();
+            log::info!("Gotten {} nodes of section", nodes.len());
             let nodes: Vec<usize> = nodes
                 .difference(&already_seen_nodes)
                 .into_iter()
                 .copied()
                 .collect();
+            log::info!("Working with {} nodes after difference", nodes.len());
             let (abacus, non_zero_nodes) = gb.get_abacus_by_group().to_abacus(&nodes, paths);
+            log::info!("Calculating another hist");
             let hist = gb.get_hist_from_abacus(&abacus);
-            eprintln!("hist: {:?}", hist);
+            log::info!("Calculating another growth");
             let growth = hist.calc_growth(
                 &crate::util::Threshold::Absolute(1),
                 &crate::util::Threshold::Relative(0.0),
             );
-            eprintln!("growth: {:?}", growth);
             let growth: Vec<f64> = growth
                 .into_iter()
                 .map(|x| x + full_growth[full_growth.len() - 1])
@@ -186,8 +189,6 @@ impl SectionGrowth {
             section_index.push((section.clone(), current_index));
             current_index += paths.len();
         }
-        eprintln!("full_growth: {:?}", full_growth);
-        eprintln!("section_index: {:?}", section_index);
         self.inner = Some(InnerGrowth {
             growth: full_growth,
             sections: section_index,
