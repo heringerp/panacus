@@ -76,6 +76,63 @@ impl CoverageMatrix {
         self.to_abacus(&nodes, paths)
     }
 
+    pub fn to_abacus_all_nodes_with_coverage(
+        &self,
+        paths: &Vec<usize>,
+        t_coverage: &Threshold,
+    ) -> (AbacusByTotal, Vec<usize>) {
+        let no_nodes = self.r.len() - 1;
+        let nodes: Vec<usize> = (0..no_nodes).collect();
+        self.to_abacus_with_coverage(&nodes, paths, t_coverage)
+    }
+
+    pub fn to_abacus_with_coverage(
+        &self,
+        nodes: &Vec<usize>,
+        paths: &Vec<usize>,
+        t_coverage: &Threshold,
+    ) -> (AbacusByTotal, Vec<usize>) {
+        let c = t_coverage.to_absolute(self.r.len() - 1);
+        let (coverage_list, non_zero_nodes): (Vec<u32>, Vec<Option<usize>>) = nodes
+            .iter()
+            .map(|node| {
+                let mut coverage_of_node = 0u32;
+                let interval_start = self.r[*node];
+                let interval_end = self.r[node + 1];
+
+                // Set coverage of nodes that are below coverage threshold to zero
+                if interval_end - interval_start < c {
+                    return (0, None);
+                }
+
+                for i in interval_start..interval_end {
+                    if paths.contains(&(self.c[i] as usize)) {
+                        coverage_of_node += 1;
+                    }
+                }
+                (
+                    coverage_of_node,
+                    if coverage_of_node == 0 {
+                        None
+                    } else {
+                        Some(*node)
+                    },
+                )
+            })
+            .unzip();
+        let groups: Vec<String> = paths.iter().map(|p| self.groups[*p].clone()).collect();
+        let non_zero_nodes: Vec<usize> = non_zero_nodes.into_iter().filter_map(|x| x).collect();
+        (
+            AbacusByTotal {
+                count: self.count,
+                countable: coverage_list,
+                uncovered_bps: Some(self.uncovered_bps.clone()),
+                groups,
+            },
+            non_zero_nodes,
+        )
+    }
+
     pub fn to_abacus(&self, nodes: &Vec<usize>, paths: &Vec<usize>) -> (AbacusByTotal, Vec<usize>) {
         let (coverage_list, non_zero_nodes): (Vec<u32>, Vec<Option<usize>>) = nodes
             .iter()

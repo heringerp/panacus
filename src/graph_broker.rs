@@ -37,6 +37,7 @@ pub use graph::ItemId;
 pub use graph::Orientation;
 pub use graph::PathSegment;
 pub use hist::Hist;
+pub use hist::Hist3D;
 pub use hist::ThresholdContainer;
 
 #[derive(Debug, Clone, Default)]
@@ -389,15 +390,6 @@ impl GraphBroker {
         hist.coverage.into_iter().map(|c| c as f64).collect()
     }
 
-    pub fn get_hist_for_path_subset(
-        &self,
-        count: CountType,
-        path_indices: &Vec<usize>,
-        uncovered_bps: Option<HashMap<u64, usize>>,
-    ) -> Vec<f64> {
-        Vec::new()
-    }
-
     pub fn get_path(&self, path_seg: &PathSegment) -> &Vec<(ItemId, Orientation)> {
         &self.paths[path_seg]
     }
@@ -526,6 +518,10 @@ impl GraphBroker {
 
     pub fn get_hist_from_abacus(&self, abacus: &AbacusByTotal) -> Hist {
         Hist::from_abacus(abacus, self.graph_aux.as_ref())
+    }
+
+    pub fn get_hist3d_from_abaci(&self, a: &AbacusByTotal, b: &AbacusByTotal) -> Hist3D {
+        Hist3D::from_abaci(a, b, self.graph_aux.as_ref())
     }
 
     pub fn set_abacus_from_gfa(

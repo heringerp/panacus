@@ -230,7 +230,7 @@ impl Growth {
                 .collect();
             let growths: Growths = hists
                 .par_iter()
-                .map(|h| (h.count, h.calc_all_growths(&hist_aux)))
+                .map(|h| (h.count, h.calc_all_growths(&hist_aux, true)))
                 .collect();
             let mut res = String::new();
             for c in comments {
@@ -315,7 +315,7 @@ impl Growth {
                     .get_hists()
                     .values()
                     .par_bridge()
-                    .map(|h| (h.count, h.calc_all_growths(&hist_aux)))
+                    .map(|h| (h.count, h.calc_all_growths(&hist_aux, true)))
                     .collect();
                 let hists = gb.get_hists();
                 let heaps_curves = hist_aux.has_full_growth_at_idx().map(|index| {

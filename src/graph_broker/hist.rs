@@ -14,6 +14,181 @@ use super::abacus::AbacusByTotal;
 use super::graph::GraphStorage;
 
 #[derive(Debug, Clone)]
+pub struct Hist3D {
+    pub count: CountType,
+    pub coverage: Vec<Vec<usize>>,
+}
+
+impl Hist3D {
+    pub fn from_abaci(
+        a: &AbacusByTotal,
+        b: &AbacusByTotal,
+        graph_aux: Option<&GraphStorage>,
+    ) -> Self {
+        assert_eq!(
+            a.count, b.count,
+            "Abaci of Hist3D need to have the same count type"
+        );
+        assert_eq!(
+            a.countable.len(),
+            b.countable.len(),
+            "Abaci of Hist3D need to have the same length"
+        );
+        Self {
+            count: a.count,
+            coverage: match a.count {
+                CountType::Node | CountType::Edge => Self::construct_hist(a, b),
+                CountType::Bp => Self::construct_hist_bps(
+                    a,
+                    b,
+                    graph_aux.expect("Graph auxiliary is needed for Bps hist"),
+                ),
+                CountType::All => unreachable!("inadmissable count type"),
+            },
+        }
+    }
+
+    fn construct_hist(a: &AbacusByTotal, b: &AbacusByTotal) -> Vec<Vec<usize>> {
+        let mut hist: Vec<Vec<usize>> = vec![vec![0; b.groups.len() + 1]; a.groups.len() + 1];
+        for (i, a_cov) in a.countable.iter().enumerate() {
+            let b_cov = b.countable[i];
+            if i != 0 {
+                if *a_cov as usize >= hist.len() {
+                    log::warn!("coverage {} of item {} in Abacus a exceeds the number of groups {}, it'll be ignored in the count", a_cov, i, a.groups.len());
+                    continue;
+                }
+                if b_cov as usize >= hist[0].len() {
+                    log::warn!("coverage {} of item {} in Abacus b exceeds the number of groups {}, it'll be ignored in the count", b_cov, i, b.groups.len());
+                    continue;
+                }
+            }
+            hist[*a_cov as usize][b_cov as usize] += 1;
+        }
+        hist
+    }
+
+    fn construct_hist_bps(
+        a: &AbacusByTotal,
+        b: &AbacusByTotal,
+        graph_aux: &GraphStorage,
+    ) -> Vec<Vec<usize>> {
+        let mut hist: Vec<Vec<usize>> = vec![vec![0; b.groups.len() + 1]; a.groups.len() + 1];
+        for (i, a_cov) in a.countable.iter().enumerate() {
+            let b_cov = b.countable[i];
+            if i != 0 {
+                if *a_cov as usize >= hist.len() {
+                    log::warn!("coverage {} of item {} in Abacus a exceeds the number of groups {}, it'll be ignored in the count", a_cov, i, a.groups.len());
+                    continue;
+                }
+                if b_cov as usize >= hist[0].len() {
+                    log::warn!("coverage {} of item {} in Abacus b exceeds the number of groups {}, it'll be ignored in the count", b_cov, i, b.groups.len());
+                    continue;
+                }
+            }
+            hist[*a_cov as usize][b_cov as usize] += graph_aux.node_lens[i] as usize;
+        }
+
+        // subtract uncovered bps
+        assert_eq!(
+            a.uncovered_bps, b.uncovered_bps,
+            "Uncovered bps of abaci are not identical"
+        );
+        let uncovered_bps = a.uncovered_bps.as_ref().unwrap();
+        for (id, uncov) in uncovered_bps.iter() {
+            hist[a.countable[*id as usize] as usize][b.countable[*id as usize] as usize] -= uncov;
+            hist[0][0] += uncov;
+        }
+        hist
+    }
+
+    pub fn calc_all_growths(
+        &self,
+        hist_aux: &ThresholdContainer,
+        insert_zero: bool,
+    ) -> Vec<Vec<f64>> {
+        self.to_tsv();
+        let mut growths: Vec<Vec<f64>> = hist_aux
+            .coverage
+            .par_iter()
+            .zip(&hist_aux.quorum)
+            .map(|(c, q)| {
+                log::info!(
+                    "calculating growth for coverage >= {} and quorum >= {}",
+                    &c,
+                    &q
+                );
+                self.calc_growth(c, q)
+            })
+            .collect();
+        // insert empty row for 0 element
+        if insert_zero {
+            for g in &mut growths {
+                g.insert(0, f64::NAN);
+            }
+        }
+        growths
+    }
+
+    pub fn calc_growth(&self, t_coverage: &Threshold, t_quorum: &Threshold) -> Vec<f64> {
+        self.calc_growth_quorum(t_coverage, t_quorum)
+    }
+
+    fn calc_growth_quorum(&self, t_coverage: &Threshold, t_quorum: &Threshold) -> Vec<f64> {
+        let n1 = self.coverage.len() - 1;
+        let n2 = self.coverage[0].len() - 1;
+        let c = usize::max(1, t_coverage.to_absolute(n2));
+        let quorum = t_quorum.to_relative(n2);
+        let mut pangrowth: Vec<f64> = vec![0.0; n2];
+
+        log::info!("Calculating quorum: {}, c: {}", quorum, c);
+        // eprintln!("hist3d: {:?}", self.coverage);
+
+        for m in 1..n2 + 1 {
+            let mut res = 0.0;
+            let m_quorum = usize::max(((m as f64 + n1 as f64) * quorum).ceil() as usize, 1);
+            let n2_choose_m = choose(n2, m);
+
+            for i in 0..=n2 {
+                for j in 0..=n1 {
+                    if self.coverage[j][i] == 0 {
+                        continue;
+                    }
+                    if m_quorum <= j {
+                        res += self.coverage[j][i] as f64;
+                        continue;
+                    }
+                    let mut sub_res = 0.0f64;
+                    for k in usize::max(m_quorum - j, c)..=usize::min(i, m) {
+                        let first = choose(i, k);
+                        let second = choose(n2 - i, m - k);
+                        if i >= k && n2 - i >= m - k {
+                            sub_res += (first + second - n2_choose_m).exp2();
+                        }
+                    }
+                    res += (self.coverage[j][i] as f64) * sub_res;
+                }
+            }
+            pangrowth[m - 1] = res;
+        }
+
+        pangrowth
+    }
+
+    pub fn to_tsv(&self) {
+        eprintln!("");
+        eprintln!("");
+        for i in 0..self.coverage.len() {
+            for j in 0..self.coverage[i].len() - 1 {
+                eprint!("{}\t", self.coverage[i][j]);
+            }
+            eprintln!("{}", self.coverage[i][self.coverage[i].len() - 1]);
+        }
+        eprintln!("");
+        eprintln!("");
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Hist {
     pub count: CountType,
     pub coverage: Vec<usize>,
@@ -88,7 +263,11 @@ impl Hist {
         }
     }
 
-    pub fn calc_all_growths(&self, hist_aux: &ThresholdContainer) -> Vec<Vec<f64>> {
+    pub fn calc_all_growths(
+        &self,
+        hist_aux: &ThresholdContainer,
+        insert_zero: bool,
+    ) -> Vec<Vec<f64>> {
         let mut growths: Vec<Vec<f64>> = hist_aux
             .coverage
             .par_iter()
@@ -103,8 +282,10 @@ impl Hist {
             })
             .collect();
         // insert empty row for 0 element
-        for g in &mut growths {
-            g.insert(0, f64::NAN);
+        if insert_zero {
+            for g in &mut growths {
+                g.insert(0, f64::NAN);
+            }
         }
         growths
     }

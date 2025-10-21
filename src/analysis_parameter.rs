@@ -239,6 +239,8 @@ pub enum AnalysisParameter {
         #[serde(default)]
         count_type: CountType,
         sections: String,
+        coverage: Option<String>,
+        quorum: Option<String>,
     },
     RegionalCount {
         reference: String,
