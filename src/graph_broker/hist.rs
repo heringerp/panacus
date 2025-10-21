@@ -18,7 +18,7 @@ pub struct Hist {
     pub coverage: Vec<usize>,
 }
 
-pub fn choose(n: usize, k: usize) -> f64 {
+pub fn log2_choose(n: usize, k: usize) -> f64 {
     let mut res: f64 = 0.0;
     if k > n {
         return 0.0;
@@ -137,51 +137,67 @@ impl Hist {
         pangrowth
     }
 
+    // Formula used:
+    //
+    // \sum_{i = \lceil q \cdot m \rceil }^N h(i) \sum_{j = \lceil q \cdot m \rceil}^m \frac{\binom{i}{j} \binom{N - i}{m - j}}{\binom{N}{m}} =
+    // \sum_{i = \lceil q \cdot m \rceil }^N h(i) \cdot \left( \frac{\binom{i}{m}}{\binom{N}{m}} + \sum_{j = \lceil q \cdot m \rceil}^{m-1} \frac{\binom{i}{j} \binom{N - i}{m - j}}{\binom{N}{m}} \right) =
+    // \sum_{i = \lceil q \cdot m \rceil }^N h(i) \cdot \frac{\binom{i}{j}}{\binom{N}{m}} +
+    // \sum_{i = \lceil q \cdot m \rceil }^N h(i)  \sum_{j = \lceil q \cdot m \rceil}^{m-1} \frac{\binom{i}{j} \binom{N - i}{m - j}}{\binom{N}{m}} =
+    // \sum_{i = \lceil q \cdot m \rceil }^N h(i) \cdot \frac{\binom{i}{j}}{\binom{N}{m}} +
+    // \sum_{i = \lceil q \cdot m \rceil }^{N - 1} h(i)  \sum_{j = \lceil q \cdot m \rceil}^{m-1} \frac{\binom{i}{j} \binom{N - i}{m - j}}{\binom{N}{m}}
     pub fn calc_growth_quorum(&self, t_coverage: &Threshold, t_quorum: &Threshold) -> Vec<f64> {
         let n = self.coverage.len() - 1; // hist array has length n+1: from [0..n]
         let c = usize::max(1, t_coverage.to_absolute(n));
         let quorum = t_quorum.to_relative(n);
         let mut pangrowth: Vec<f64> = vec![0.0; n];
 
+        // Used for \binom{N}{m} = \frac{N^{\underline{m}}}{m!}
         let mut n_fall_m: f64 = 0.0;
         let mut m_fact: f64 = 0.0;
 
-        let mut perc_mult: Vec<f64> = vec![0.0; n + 1];
-        let mut q: Vec<Vec<f64>> = vec![vec![0.0; n + 1]; n + 1];
+        let mut i_fall_m: Vec<f64> = vec![0.0; n + 1];
+
+        // Basically \binom{i}{j} \cdot \binom{N - i}{m - j}
+        // but calculated as \binom{i}{j} \cdot \frac{{N - i}^{\underline{m - j}}}{(m - j)!}
+        // in a dynamic programming fashion
+        let mut numerator: Vec<Vec<f64>> = vec![vec![0.0; n + 1]; n + 1];
 
         for m in 1..n + 1 {
             m_fact += (m as f64).log2();
             let m_quorum = (m as f64 * quorum).ceil() as usize;
 
-            //100% quorum
-            let mut yl: f64 = 0.0;
+            //100% quorum, left part of above formula
+            let mut left_sum: f64 = 0.0;
             n_fall_m += (n as f64 - m as f64 + 1.0).log2();
             for i in usize::max(m, c)..n + 1 {
-                perc_mult[i] += (i as f64 - m as f64 + 1.0).log2();
-                yl += ((self.coverage[i] as f64).log2() + perc_mult[i] - n_fall_m).exp2();
+                i_fall_m[i] += (i as f64 - m as f64 + 1.0).log2();
+                left_sum += ((self.coverage[i] as f64).log2() + i_fall_m[i] - n_fall_m).exp2();
             }
 
-            //[m_quorum, 100) quorum
-            let mut yr: f64 = 0.0;
+            //[m_quorum, 100) quorum, right part of above formula
+            let mut right_sum: f64 = 0.0;
             for i in m_quorum..n {
                 let mut sum_q = 0.0;
                 let mut add = false;
                 for j in usize::max(m_quorum, c)..m {
+                    // Necessary to skip cases where binomial coefficient should be zero
+                    // (not possible due to log space)
                     if n + j + 1 > i + m && j <= i {
-                        if q[i][j] == 0.0 {
-                            q[i][j] = choose(i, j);
+                        if numerator[i][j] == 0.0 {
+                            numerator[i][j] = log2_choose(i, j);
                         }
-                        q[i][j] += (n as f64 - i as f64 - m as f64 + 1.0 + j as f64).log2();
-                        q[i][j] -= (m as f64 - j as f64).log2();
-                        sum_q += (q[i][j] + m_fact - n_fall_m).exp2();
+                        numerator[i][j] += (n as f64 - i as f64 - m as f64 + 1.0 + j as f64).log2();
+                        numerator[i][j] -= (m as f64 - j as f64).log2();
+                        sum_q += (numerator[i][j] + m_fact - n_fall_m).exp2();
                         add = true;
                     }
                 }
+                // Only add to right sum if at least once something was added to sum_q (otherwise problem because e^0 == 1)
                 if add {
-                    yr += ((self.coverage[i] as f64).log2() + sum_q.log2()).exp2();
+                    right_sum += ((self.coverage[i] as f64).log2() + sum_q.log2()).exp2();
                 }
             }
-            pangrowth[m - 1] = yl + yr;
+            pangrowth[m - 1] = left_sum + right_sum;
         }
         pangrowth
     }
@@ -339,13 +355,13 @@ mod tests {
 
     #[test]
     fn test_choose_function() {
-        assert_almost_eq(choose(5, 0), 0.0);
-        assert_almost_eq(choose(5, 5), 0.0);
-        assert_almost_eq(choose(5, 1), (5.0f64).log2());
-        assert_almost_eq(choose(5, 4), (5.0f64).log2());
+        assert_almost_eq(log2_choose(5, 0), 0.0);
+        assert_almost_eq(log2_choose(5, 5), 0.0);
+        assert_almost_eq(log2_choose(5, 1), (5.0f64).log2());
+        assert_almost_eq(log2_choose(5, 4), (5.0f64).log2());
         let expected = (factorial(5) / (factorial(2) * factorial(3))).log2();
-        assert_almost_eq(choose(5, 2), expected);
-        assert_eq!(choose(5, 6), 0.0);
+        assert_almost_eq(log2_choose(5, 2), expected);
+        assert_eq!(log2_choose(5, 6), 0.0);
     }
 
     #[test]
