@@ -182,6 +182,7 @@ impl RegionalGrowth {
         let ref_paths = gb.get_all_matchings_paths(&self.reference_text);
         let ref_paths = split_ref_paths(ref_paths);
         let node_lens = gb.get_node_lens();
+        eprintln!("node_lens: {}", node_lens.len());
         let mut all_growths_of_windows: HashMap<PathSegment, Vec<(f64, f64, usize, usize)>> =
             HashMap::new();
         for (sequence_id, sequence) in ref_paths {
@@ -269,7 +270,7 @@ impl RegionalGrowth {
                                     self.count_type,
                                     &indices,
                                     uncovered_bps,
-                                    1,
+                                    self.coverage,
                                 );
                                 eprintln!(
                                     "N {}-{}\t{}",
