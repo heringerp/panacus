@@ -2,7 +2,7 @@ use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
-use ml_helpers::linear_regression::huber_regressor::{solve, HuberRegressor};
+use ml_helpers::other_regression::power_law_with_intercept::{solve, PowerLawIntercept};
 
 use crate::{
     analyses::regional_helpers::get_edge_windows,
@@ -257,6 +257,16 @@ impl RegionalGrowth {
                                 })
                                 .collect();
                             let n = 100;
+                            let growth = gb.get_growth_for_subset(
+                                self.count_type,
+                                &indices,
+                                uncovered_bps,
+                                self.coverage,
+                            );
+                            let f_new: Vec<f64> =
+                                growth.iter().tuple_windows().map(|(a, b)| b - a).collect();
+                            let f_new_x: Vec<f64> =
+                                (2..f_new.len() + 2).map(|x| x as f64).collect();
                             if self.log_windows {
                                 let node_ids_to_names = gb.get_node_names();
                                 let nodes_text = window
@@ -266,12 +276,6 @@ impl RegionalGrowth {
                                     .into_iter()
                                     .map(|id| str::from_utf8(&node_ids_to_names[&id]).unwrap())
                                     .join("\t");
-                                let growth = gb.get_growth_for_subset(
-                                    self.count_type,
-                                    &indices,
-                                    uncovered_bps,
-                                    self.coverage,
-                                );
                                 eprintln!(
                                     "N {}-{}\t{}",
                                     start + contig_start,
@@ -291,14 +295,11 @@ impl RegionalGrowth {
                                     },
                                 );
                             }
-                            let log_x2: Vec<f64> = log_x.iter().skip(1).take(n).copied().collect();
-                            let log_y2: Vec<f64> = log_y.iter().skip(1).take(n).copied().collect();
-                            let huber = HuberRegressor::from(log_x2.clone(), log_y2.clone());
-                            let params = solve(huber);
-                            let alpha = 2.0 + params[0];
-                            let r_squared =
-                                calculate_r_squared(&log_x2, &log_y2, params[0], params[1]);
-                            (alpha, r_squared)
+                            let power_law =
+                                PowerLawIntercept::from(f_new_x[1..].to_vec(), f_new[1..].to_vec());
+                            let params = solve(power_law);
+                            let alpha = params[1];
+                            (alpha, 0.0)
                         };
                         Some((alpha, r_squared, *start + contig_start, *end + contig_start))
                     })
@@ -374,7 +375,7 @@ impl RegionalGrowth {
                                     }
                                 })
                                 .collect();
-                            let huber = HuberRegressor::from(x.clone(), y.clone());
+                            let huber = PowerLawIntercept::from(x.clone(), y.clone());
                             let params = solve(huber);
                             let r_squared = calculate_r_squared(&x, &y, params[0], params[1]);
                             (-params[0], r_squared)
