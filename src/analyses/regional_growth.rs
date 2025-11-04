@@ -8,7 +8,7 @@ use crate::{
     analyses::regional_helpers::get_edge_windows,
     analysis_parameter::AnalysisParameter,
     graph_broker::{GraphBroker, ItemId, Orientation, PathSegment},
-    html_report::{AnalysisSection, ReportItem},
+    html_report::{AnalysisSection, ReportItem, Window},
     util::{get_default_plot_downloads, CountType},
 };
 
@@ -21,7 +21,7 @@ pub struct RegionalGrowth {
     reference_text: PathSegment,
     window_size: usize,
     count_type: CountType,
-    values: HashMap<PathSegment, Vec<(f64, f64, usize, usize)>>,
+    values: HashMap<PathSegment, Vec<Window>>,
     coverage: usize,
     log_windows: bool,
 }
@@ -37,8 +37,14 @@ impl Analysis for RegionalGrowth {
         }
         let mut text = format!("track type=bedGraph name=\"Panacus growth\" description=\"Average growth for a window of bps\" visibility=full color=200,100,0 priority=20\n");
         for (sequence_id, sequence) in &self.values {
-            for (growth, _r_squared, start, end) in sequence {
-                let line = format!("{} {} {} {}\n", sequence_id.to_string(), start, end, growth,);
+            for window in sequence {
+                let line = format!(
+                    "{} {} {} {}\n",
+                    sequence_id.to_string(),
+                    window.start,
+                    window.end,
+                    window.values[0]
+                );
                 text.push_str(&line);
             }
         }
@@ -65,8 +71,12 @@ impl Analysis for RegionalGrowth {
             .map(|(sequence, values)| ReportItem::Chromosomal {
                 id: format!("{id_prefix}-{}-{}", self.count_type, sequence.to_string()),
                 name: gb.get_fname(),
-                label: "Average growth".to_string(),
-                second_label: "R²".to_string(),
+                labels: vec![
+                    "Growth".to_string(),
+                    "c".to_string(),
+                    "Adapted c".to_string(),
+                    "Successfull fit".to_string(),
+                ],
                 is_diverging: true,
                 contains_outliers: false,
                 sequence: sequence.to_string(),
@@ -147,25 +157,33 @@ impl RegionalGrowth {
         let sum_lens = self
             .values
             .iter()
-            .map(|(_s, v)| v.iter().map(|(_, _, s, e)| (e - s) as u64).sum::<u64>())
+            .map(|(_s, v)| v.iter().map(|w| (w.end - w.start) as u64).sum::<u64>())
             .sum::<u64>() as f64;
-        let sum_r2 = self
+        let sum_c = self
             .values
             .iter()
-            .map(|(_s, v)| v.iter().map(|(_, r, s, e)| (e - s) as f64 * r).sum::<f64>())
+            .map(|(_s, v)| {
+                v.iter()
+                    .map(|w| (w.end - w.start) as f64 * w.values[1])
+                    .sum::<f64>()
+            })
             .sum::<f64>();
         let sum_alpha = self
             .values
             .iter()
-            .map(|(_s, v)| v.iter().map(|(a, _, s, e)| (e - s) as f64 * a).sum::<f64>())
+            .map(|(_s, v)| {
+                v.iter()
+                    .map(|w| (w.end - w.start) as f64 * w.values[0])
+                    .sum::<f64>()
+            })
             .sum::<f64>();
-        let avg_r2 = sum_r2 / sum_lens;
+        let avg_c = sum_c / sum_lens;
         let avg_alpha = sum_alpha / sum_lens;
         log::info!(
             "Calculated growth for {} with cov = {}, avg r2 = {}, avg alpha = {}",
             self.count_type,
             self.coverage,
-            avg_r2,
+            avg_c,
             avg_alpha
         );
     }
@@ -182,9 +200,7 @@ impl RegionalGrowth {
         let ref_paths = gb.get_all_matchings_paths(&self.reference_text);
         let ref_paths = split_ref_paths(ref_paths);
         let node_lens = gb.get_node_lens();
-        eprintln!("node_lens: {}", node_lens.len());
-        let mut all_growths_of_windows: HashMap<PathSegment, Vec<(f64, f64, usize, usize)>> =
-            HashMap::new();
+        let mut all_growths_of_windows: HashMap<PathSegment, Vec<Window>> = HashMap::new();
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
                 let contig_start = contig_id.start.unwrap_or_default();
@@ -196,11 +212,11 @@ impl RegionalGrowth {
                     contig_start,
                 );
                 log::info!("Calculating growth for {} windows", windows.len());
-                let growths_of_windows: Vec<(f64, f64, usize, usize)> = windows
+                let growths_of_windows: Vec<Window> = windows
                     // .par_iter()
                     .iter()
                     .filter_map(|(window, start, end)| {
-                        let (alpha, r_squared) = {
+                        let params: Vec<f64> = {
                             let indices: HashSet<usize> =
                                 window.iter().map(|(idx, _)| idx.0 as usize).collect(); // Necessary to first create HashSet to remove duplicate nodes
                             let indices: Vec<usize> = indices.into_iter().collect();
@@ -233,30 +249,7 @@ impl RegionalGrowth {
                                 uncovered_bps.clone(),
                             );
                             let x: Vec<f64> = (1..hist.len()).map(|x| (x as f64)).collect();
-                            let log_x: Vec<f64> = x
-                                .iter()
-                                .map(|x| x.log10())
-                                .map(|x| {
-                                    if x.is_infinite() && x.is_sign_negative() {
-                                        -100000.0
-                                    } else {
-                                        x
-                                    }
-                                })
-                                .collect();
                             let y = hist.into_iter().skip(1).collect::<Vec<f64>>();
-                            let log_y: Vec<f64> = y
-                                .iter()
-                                .map(|y| y.log10())
-                                .map(|y| {
-                                    if y.is_infinite() && y.is_sign_negative() {
-                                        -100000.0
-                                    } else {
-                                        y
-                                    }
-                                })
-                                .collect();
-                            let n = 100;
                             let growth = gb.get_growth_for_subset(
                                 self.count_type,
                                 &indices,
@@ -299,9 +292,17 @@ impl RegionalGrowth {
                                 PowerLawIntercept::from(f_new_x[1..].to_vec(), f_new[1..].to_vec());
                             let params = solve(power_law);
                             let alpha = params[1];
-                            (alpha, 0.0)
+                            let c = params[2];
+                            let c_adapted = c / params[0];
+                            let success_bit = params[3];
+                            vec![alpha, c, c_adapted, success_bit]
                         };
-                        Some((alpha, r_squared, *start + contig_start, *end + contig_start))
+                        let window = Window {
+                            start: *start + contig_start,
+                            end: *end + contig_start,
+                            values: params,
+                        };
+                        Some(window)
                     })
                     .collect();
                 all_growths_of_windows
@@ -325,8 +326,7 @@ impl RegionalGrowth {
         let ref_paths = gb.get_all_matchings_paths(&self.reference_text);
         let ref_paths = split_ref_paths(ref_paths);
         let node_lens = gb.get_node_lens();
-        let mut all_growths_of_windows: HashMap<PathSegment, Vec<(f64, f64, usize, usize)>> =
-            HashMap::new();
+        let mut all_growths_of_windows: HashMap<PathSegment, Vec<Window>> = HashMap::new();
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
                 let contig_start = contig_id.start.unwrap_or_default();
@@ -339,10 +339,10 @@ impl RegionalGrowth {
                     contig_start,
                 );
                 log::info!("Calculating growth for {} windows", windows.len());
-                let growths_of_windows: Vec<(f64, f64, usize, usize)> = windows
+                let growths_of_windows: Vec<Window> = windows
                     .par_iter()
                     .map(|(window, start, end)| {
-                        let (alpha, r_squared) = {
+                        let params = {
                             let indeces: Vec<usize> =
                                 window.iter().map(|idx| idx.0 as usize).collect();
                             let uncovered_bps = None;
@@ -378,9 +378,14 @@ impl RegionalGrowth {
                             let huber = PowerLawIntercept::from(x.clone(), y.clone());
                             let params = solve(huber);
                             let r_squared = calculate_r_squared(&x, &y, params[0], params[1]);
-                            (-params[0], r_squared)
+                            vec![-params[0], r_squared]
                         };
-                        (alpha, r_squared, *start + contig_start, *end + contig_start)
+                        let window = Window {
+                            start: *start + contig_start,
+                            end: *end + contig_start,
+                            values: params,
+                        };
+                        window
                     })
                     .collect();
                 all_growths_of_windows

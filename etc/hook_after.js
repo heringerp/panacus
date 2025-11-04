@@ -433,58 +433,9 @@ for (let key in objects.datasets) {
         let c = element;
         let thisId = 'chart-chromosomal-' + c.id;
         // buildPlotDownload(myChart, h.id, fname);
-        let scale;
-        if (c.diverging) {
-            scale = {
-                "domainMid": 1,
-                "range": ["#81e7ff", "#582948", "#ffcf67"],
-            };
-        } else if (c.contains_outliers) {
-            scale = {
-                "scheme": "yellowgreenblue",
-                "domain": [0, 1]
-            };
-        } else {
-            scale = {
-                "scheme": "yellowgreenblue",
-            };
-        }
-        let tooltip;
-        if (c.secondLabel) {
-            tooltip = [
-                  {"field": "x", "type": "quantitative", "title": "Position in bps"},
-                  {"field": "y", "type": "quantitative", "title": c.label},
-                  {"field": "second_value", "type": "quantitative", "title": c.secondLabel}
-            ];
-        } else {
-            tooltip = [
-                  {"field": "x", "type": "quantitative", "title": "Position in bps"},
-                  {"field": "y", "type": "quantitative", "title": c.label},
-            ];
-        }
-        let color;
-        if (c.contains_outliers) {
-            color = {
-                "condition": {
-                    "test": "datum.isOutlier",
-                    "value": "red"
-                },
-                "field": "y",
-                "type": "quantitative",
-                "scale": scale,
-                "title": c.label
-            };
-        } else {
-            color = {
-                    "field": "y",
-                    "type": "quantitative",
-                    "scale": scale,
-                    "title": c.label
-                };
-        }
         let mySpec = {
             "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-            "description": "Hexbin",
+            "description": "Chromosomal plot",
             "data": c.data,
             "width": 1100,
             "params": [
@@ -492,14 +443,34 @@ for (let key in objects.datasets) {
                     "name": "grid",
                     "select": "interval",
                     "bind": "scales"
+                },
+                {
+                  "name": "metric_select",
+                  "value": c.labels[0],
+                  "bind": {
+                    "input": "select",
+                    "options": c.labels,
+                    "name": "Variable: "
+                  }
+                },
+                {
+                  "name": "color_range",
+                  "expr": "metric_select == 'Growth' ? 'redyellowblue' : 'yelloworangered'"
                 }
             ],
             "transform": [
-                { "calculate": "datum.y < 0 ? true : false", "as": "isOutlier" }
+                {
+                  "fold": c.labels,
+                  "as": ["metric_type", "metric_value"]
+                },
+                {
+                  "filter": "datum.metric_type == metric_select"
+                }
             ],
             "mark": {
                 "type": "rect",
-                "clip": true
+                "clip": true,
+                "tooltip": true
             },
             "title": {
                 "text": c.sequence,
@@ -516,8 +487,14 @@ for (let key in objects.datasets) {
                 "x2": {
                     "field": "x2",
                 },
-                "color": color,
-                "tooltip": tooltip
+                "color": {
+                    "field": "metric_value",
+                    "type": "quantitative",
+                    "scale": {
+                      "scheme": {"expr": "color_range"} ,
+                      "type": "linear"
+                    }
+                }
             },
             "config": {
                 "axis": {"grid": true, "tickBand": "extent"},
@@ -525,10 +502,21 @@ for (let key in objects.datasets) {
             }
           };
 
-        let opt = {
-            "actions": false,
-        };
-        vegaEmbed(`#${CSS.escape(thisId)}`, mySpec, opt).then(({ view, spec, vgSpec }) => {
+        function render(scaleType, thisId, vlSpec, addListeners) {
+            const copied_spec = JSON.parse(JSON.stringify(vlSpec)); // deep copy
+            console.log("Setting scale type: " + scaleType);
+            if (scaleType == "log") {
+                copied_spec.encoding.color.scale.type = "symlog"; // set scale type
+            } else {
+                copied_spec.encoding.color.scale.type = "linear"; // set scale type
+            }
+            let opt = {
+                "actions": false,
+            };
+        vegaEmbed(`#${CSS.escape(thisId)}`, copied_spec, opt).then(({ view, spec, vgSpec }) => {
+
+            if (addListeners) {
+
             // Export PNG
             let png_button = document.getElementById('btn-download-plot-png-' + c.id);
             png_button.addEventListener('click', () => {
@@ -562,7 +550,24 @@ for (let key in objects.datasets) {
                     config: undefined,
                 });
             });
+            }
         });
+        }
+
+        console.log('btn-logscale-plot-chrom-' + c.id);
+        document.getElementById('btn-logscale-plot-chrom-' + c.id).addEventListener('change', (event) => {
+            if (event.currentTarget.checked) {
+                render("log", thisId, mySpec, false);
+            } else {
+                render("linear", thisId, mySpec, false);
+            }
+        });
+
+        if (document.getElementById('btn-logscale-plot-chrom-' + c.id).checked) {
+            render("log", thisId, mySpec, true);
+        } else {
+            render("linear", thisId, mySpec, true);
+        }
     } else if (element instanceof Hexbin) {
         let h = element;
         let thisId = 'chart-hexbin-' + h.id;

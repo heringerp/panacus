@@ -5,7 +5,7 @@ use crate::{
     analyses::regional_helpers::get_edge_windows,
     analysis_parameter::AnalysisParameter,
     graph_broker::{GraphBroker, ItemId, Orientation, PathSegment},
-    html_report::{AnalysisSection, ReportItem},
+    html_report::{AnalysisSection, ReportItem, Window},
     util::{get_default_plot_downloads, CountType},
 };
 
@@ -60,12 +60,18 @@ impl Analysis for RegionalCount {
             .map(|(sequence, values)| ReportItem::Chromosomal {
                 id: format!("{id_prefix}-{}-{}", self.count_type, sequence.to_string()),
                 name: gb.get_fname(),
-                label: "Count".to_string(),
-                second_label: "".to_string(),
+                labels: vec!["Count".to_string()],
                 is_diverging: false,
                 contains_outliers: false,
                 sequence: sequence.to_string(),
-                values: values.into_iter().map(|(v, s, e)| (v, 0.0, s, e)).collect(),
+                values: values
+                    .into_iter()
+                    .map(|(v, start, end)| Window {
+                        start,
+                        end,
+                        values: vec![v],
+                    })
+                    .collect(),
             })
             .collect();
         let table_text = self.generate_table(Some(gb))?;

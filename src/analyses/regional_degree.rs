@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     analysis_parameter::AnalysisParameter,
     graph_broker::{GraphBroker, ItemId, Orientation, PathSegment},
-    html_report::{AnalysisSection, ReportItem},
+    html_report::{AnalysisSection, ReportItem, Window},
     util::{get_default_plot_downloads, CountType},
 };
 
@@ -57,12 +57,18 @@ impl Analysis for RegionalDegree {
             .map(|(sequence, values)| ReportItem::Chromosomal {
                 id: format!("{id_prefix}-{}-{}", CountType::Node, sequence.to_string()),
                 name: gb.get_fname(),
-                label: "Average Degree".to_string(),
-                second_label: "".to_string(),
+                labels: vec!["Average Degree".to_string()],
                 is_diverging: false,
                 contains_outliers: false,
                 sequence: sequence.to_string(),
-                values: values.into_iter().map(|(v, s, e)| (v, 0.0, s, e)).collect(),
+                values: values
+                    .into_iter()
+                    .map(|(v, start, end)| Window {
+                        start,
+                        end,
+                        values: vec![v],
+                    })
+                    .collect(),
             })
             .collect();
         let table_text = self.generate_table(Some(gb))?;

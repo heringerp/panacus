@@ -386,7 +386,6 @@ impl GraphBroker {
     ) -> Vec<f64> {
         let abacus = self.get_abacus_by_total(count);
         assert_eq!(abacus.countable.len(), self.get_node_lens().len(), "Indices from Node Lengths do not correspond to valid indices in Abacus (regional-growth)");
-        eprintln!("Abacus_len: {}", abacus.countable.len());
         let hist =
             Hist::from_abacus_for_window(abacus, self.graph_aux.as_ref(), indices, uncovered_bps);
         hist.coverage.into_iter().map(|c| c as f64).collect()

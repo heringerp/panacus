@@ -478,12 +478,11 @@ pub enum ReportItem {
     Chromosomal {
         id: String,
         name: String,
-        label: String,
-        second_label: String,
+        labels: Vec<String>,
         is_diverging: bool,
         contains_outliers: bool,
         sequence: String,
-        values: Vec<(f64, f64, usize, usize)>,
+        values: Vec<Window>,
     },
 }
 
@@ -580,8 +579,7 @@ impl ReportItem {
             Self::Chromosomal {
                 id,
                 name,
-                label,
-                second_label,
+                labels,
                 is_diverging,
                 contains_outliers,
                 sequence,
@@ -602,18 +600,20 @@ impl ReportItem {
 
                     // if two following values are continuous
                     // introduce overlap in plot (avoids gaps due to rounding errors)
-                    if values[i].3 == values[i + 1].2 {
-                        values.get_mut(i).expect("values has value").3 = values[i + 1].3;
+                    if values[i].end == values[i + 1].start {
+                        values.get_mut(i).expect("values has value").end = values[i + 1].end;
                     }
                 }
 
                 let data: Vec<String> = values
                     .into_iter()
-                    .map(|(y, y2, x, x2)| {
-                        format!(
-                            "{{'x': {}, 'x2': {}, 'y': {}, 'second_value': {}}}",
-                            x, x2, y, y2
-                        )
+                    .map(|w| {
+                        let mut text = format!("{{'x': {}, 'x2': {}", w.start, w.end,);
+                        for (i, label) in labels.iter().enumerate() {
+                            text.push_str(&format!(", '{}': {}", label, w.values[i]));
+                        }
+                        text.push_str("}");
+                        text
                     })
                     .collect();
                 let mut data_text = "{'values': [".to_string();
@@ -623,7 +623,7 @@ impl ReportItem {
                 }
                 data_text.push_str("]}");
                 let js_object = format!(
-                    "new Chromosomal('{id}', '{name}', '{label}', '{second_label}', {is_diverging}, {contains_outliers}, '{sequence}', {data_text})",
+                    "new Chromosomal('{id}', '{name}', {:?}, {is_diverging}, {contains_outliers}, '{sequence}', {data_text})", labels
                 );
                 let data = HashMap::from([("id".to_string(), to_json(&id))]);
                 Ok((
@@ -973,4 +973,11 @@ impl Bin {
     fn distance(x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
         (((x1 - x2).powf(2.0) + (y1 - y2).powf(2.0)) as f64).sqrt()
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Window {
+    pub start: usize,
+    pub end: usize,
+    pub values: Vec<f64>,
 }

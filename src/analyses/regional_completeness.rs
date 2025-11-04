@@ -8,7 +8,7 @@ use crate::{
     analyses::regional_helpers::get_edge_windows,
     analysis_parameter::AnalysisParameter,
     graph_broker::{GraphBroker, ItemId, Orientation, PathSegment},
-    html_report::{AnalysisSection, ReportItem},
+    html_report::{AnalysisSection, ReportItem, Window},
     util::{get_default_plot_downloads, CountType},
 };
 
@@ -21,7 +21,7 @@ pub struct RegionalCompleteness {
     reference_text: PathSegment,
     window_size: usize,
     count_type: CountType,
-    values: HashMap<PathSegment, Vec<(f64, f64, usize, usize)>>,
+    values: HashMap<PathSegment, Vec<Window>>,
     coverage: usize,
     log_windows: bool,
 }
@@ -37,13 +37,13 @@ impl Analysis for RegionalCompleteness {
         }
         let mut text = format!("track type=bedGraph name=\"Panacus completeness\" description=\"Completeness for a window of bps\" visibility=full color=200,100,0 priority=20\n");
         for (sequence_id, sequence) in &self.values {
-            for (completeness, _r_squared, start, end) in sequence {
+            for window in sequence {
                 let line = format!(
                     "{} {} {} {}\n",
                     sequence_id.to_string(),
-                    start,
-                    end,
-                    completeness,
+                    window.start,
+                    window.end,
+                    window.values[0],
                 );
                 text.push_str(&line);
             }
@@ -71,8 +71,7 @@ impl Analysis for RegionalCompleteness {
             .map(|(sequence, values)| ReportItem::Chromosomal {
                 id: format!("{id_prefix}-{}-{}", self.count_type, sequence.to_string()),
                 name: gb.get_fname(),
-                label: "Completeness".to_string(),
-                second_label: "R²".to_string(),
+                labels: vec!["Completeness".to_string(), "R²".to_string()],
                 is_diverging: false,
                 contains_outliers: true,
                 sequence: sequence.to_string(),
@@ -155,17 +154,25 @@ impl RegionalCompleteness {
         let sum_lens = self
             .values
             .iter()
-            .map(|(_s, v)| v.iter().map(|(_, _, s, e)| (e - s) as u64).sum::<u64>())
+            .map(|(_s, v)| v.iter().map(|w| (w.end - w.start) as u64).sum::<u64>())
             .sum::<u64>() as f64;
         let sum_r2 = self
             .values
             .iter()
-            .map(|(_s, v)| v.iter().map(|(_, r, s, e)| (e - s) as f64 * r).sum::<f64>())
+            .map(|(_s, v)| {
+                v.iter()
+                    .map(|w| (w.end - w.start) as f64 * w.values[1])
+                    .sum::<f64>()
+            })
             .sum::<f64>();
         let sum_completeness = self
             .values
             .iter()
-            .map(|(_s, v)| v.iter().map(|(c, _, s, e)| (e - s) as f64 * c).sum::<f64>())
+            .map(|(_s, v)| {
+                v.iter()
+                    .map(|w| (w.end - w.start) as f64 * w.values[0])
+                    .sum::<f64>()
+            })
             .sum::<f64>();
         let avg_r2 = sum_r2 / sum_lens;
         let avg_completeness = sum_completeness / sum_lens;
@@ -190,8 +197,7 @@ impl RegionalCompleteness {
         let ref_paths = gb.get_all_matchings_paths(&self.reference_text);
         let ref_paths = split_ref_paths(ref_paths);
         let node_lens = gb.get_node_lens();
-        let mut all_growths_of_windows: HashMap<PathSegment, Vec<(f64, f64, usize, usize)>> =
-            HashMap::new();
+        let mut all_growths_of_windows: HashMap<PathSegment, Vec<Window>> = HashMap::new();
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
                 let contig_start = contig_id.start.unwrap_or_default();
@@ -203,11 +209,11 @@ impl RegionalCompleteness {
                     contig_start,
                 );
                 log::info!("Calculating growth for {} windows", windows.len());
-                let growths_of_windows: Vec<(f64, f64, usize, usize)> = windows
+                let growths_of_windows: Vec<Window> = windows
                     // .par_iter()
                     .iter()
                     .filter_map(|(window, start, end)| {
-                        let (alpha, r_squared) = {
+                        let params = {
                             let indices: HashSet<usize> =
                                 window.iter().map(|(idx, _)| idx.0 as usize).collect(); // Necessary to first create HashSet to remove duplicate nodes
                             let indices: Vec<usize> = indices.into_iter().collect();
@@ -301,12 +307,17 @@ impl RegionalCompleteness {
                                 let f_additional =
                                     -10.0_f64.powf(params[1]) / (1.0 - alpha) * n.powf(1.0 - alpha);
                                 let ratio = max_features / (max_features + f_additional);
-                                (ratio, r_squared)
+                                vec![ratio, r_squared]
                             } else {
-                                (-1.0, r_squared)
+                                vec![-1.0, r_squared]
                             }
                         };
-                        Some((alpha, r_squared, *start + contig_start, *end + contig_start))
+                        let window = Window {
+                            start: *start + contig_start,
+                            end: *end + contig_start,
+                            values: params,
+                        };
+                        Some(window)
                     })
                     .collect();
                 all_growths_of_windows
@@ -330,8 +341,7 @@ impl RegionalCompleteness {
         let ref_paths = gb.get_all_matchings_paths(&self.reference_text);
         let ref_paths = split_ref_paths(ref_paths);
         let node_lens = gb.get_node_lens();
-        let mut all_growths_of_windows: HashMap<PathSegment, Vec<(f64, f64, usize, usize)>> =
-            HashMap::new();
+        let mut all_growths_of_windows: HashMap<PathSegment, Vec<Window>> = HashMap::new();
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
                 let contig_start = contig_id.start.unwrap_or_default();
@@ -344,10 +354,10 @@ impl RegionalCompleteness {
                     contig_start,
                 );
                 log::info!("Calculating growth for {} windows", windows.len());
-                let growths_of_windows: Vec<(f64, f64, usize, usize)> = windows
+                let growths_of_windows: Vec<Window> = windows
                     .par_iter()
                     .map(|(window, start, end)| {
-                        let (alpha, r_squared) = {
+                        let params = {
                             let indeces: Vec<usize> =
                                 window.iter().map(|idx| idx.0 as usize).collect();
                             let uncovered_bps = None;
@@ -411,12 +421,17 @@ impl RegionalCompleteness {
                                 let f_additional =
                                     -10.0_f64.powf(params[1]) / (1.0 - alpha) * n.powf(1.0 - alpha);
                                 let ratio = max_features / (max_features + f_additional);
-                                (ratio, r_squared)
+                                vec![ratio, r_squared]
                             } else {
-                                (-1.0, r_squared)
+                                vec![-1.0, r_squared]
                             }
                         };
-                        (alpha, r_squared, *start + contig_start, *end + contig_start)
+                        let window = Window {
+                            start: *start + contig_start,
+                            end: *end + contig_start,
+                            values: params,
+                        };
+                        window
                     })
                     .collect();
                 all_growths_of_windows
