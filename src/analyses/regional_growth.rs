@@ -295,6 +295,9 @@ impl RegionalGrowth {
                             let c = params[2];
                             let c_adapted = c / params[0];
                             let success_bit = params[3];
+                            if success_bit < 0.5 {
+                                return None;
+                            }
                             vec![alpha, c, c_adapted, success_bit]
                         };
                         let window = Window {

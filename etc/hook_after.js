@@ -456,6 +456,10 @@ for (let key in objects.datasets) {
                 {
                   "name": "color_range",
                   "expr": "metric_select == 'Growth' ? 'redyellowblue' : 'yelloworangered'"
+                },
+                {
+                    "name": "domain_mid",
+                    "expr": "metric_select == 'Growth' ? 1 : null"
                 }
             ],
             "transform": [
@@ -492,7 +496,8 @@ for (let key in objects.datasets) {
                     "type": "quantitative",
                     "scale": {
                       "scheme": {"expr": "color_range"} ,
-                      "type": "linear"
+                      "type": "linear",
+                      "domainMid": {"expr": "domain_mid"}
                     }
                 }
             },
