@@ -151,6 +151,7 @@ impl RegionalDegree {
                     self.window_size,
                     &neighbors,
                     contig_start,
+                    false,
                 );
                 let degrees_of_windows: Vec<(f64, usize, usize)> = windows
                     .iter()

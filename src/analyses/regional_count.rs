@@ -166,6 +166,7 @@ impl RegionalCount {
                     self.window_size,
                     &neighbors,
                     contig_start,
+                    false,
                 );
                 log::info!("Calculating count for {} windows", windows.len());
                 let counts_of_windows: Vec<(f64, usize, usize)> = windows

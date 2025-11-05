@@ -210,6 +210,7 @@ impl RegionalGrowth {
                     self.window_size,
                     &neighbors,
                     contig_start,
+                    self.log_windows,
                 );
                 log::info!("Calculating growth for {} windows", windows.len());
                 let growths_of_windows: Vec<Window> = windows

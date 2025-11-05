@@ -3,6 +3,8 @@ use std::{
     iter::{self},
 };
 
+use itertools::Itertools;
+
 use crate::graph_broker::{Edge, ItemId, Orientation, PathSegment};
 
 pub fn get_close_nodes(
@@ -127,6 +129,7 @@ pub fn get_windows(
     window_size: usize,
     neighbors: &HashMap<(ItemId, Orientation), HashSet<ItemId>>,
     contig_start: usize,
+    log_windows: bool,
 ) -> Vec<(Vec<(ItemId, usize)>, usize, usize)> {
     let close_nodes = get_close_nodes(ref_nodes, neighbors);
     let ref_length = get_ref_length(ref_nodes, node_lens) as usize;
@@ -217,6 +220,13 @@ pub fn get_windows(
             )
         })
         .collect::<Vec<_>>();
+    if log_windows {
+        ref_windows.iter().for_each(|(v, s, e)| {
+            if v.len() == 1 {
+                eprintln!("S {}-{} contains only a single reference node", s, e);
+            }
+        });
+    }
     ref_windows
         .into_iter()
         .map(|(window, start, end)| {
