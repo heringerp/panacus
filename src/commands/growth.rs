@@ -5,6 +5,7 @@ use crate::analysis_parameter::{AnalysisParameter, AnalysisRun, Grouping};
 pub fn get_subcommand() -> Command {
     Command::new("growth")
         .about("Calculate growth curve from coverage histogram")
+        .visible_alias("histgrowth")
         .args(&[
             arg!(file: <FILE> "EITHER graph in GFA1 format, accepts also compressed (.gz) file OR a histogram as a .tsv"),
             arg!(-s --subset <FILE> "Produce counts by subsetting the graph to a given list of paths (1-column list) or path coordinates (3- or 12-column BED file) (ONLY IN GFA MODE)"),
