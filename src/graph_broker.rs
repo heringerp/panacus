@@ -368,12 +368,11 @@ impl GraphBroker {
         count: CountType,
         indices: &Vec<usize>,
         uncovered_bps: Option<HashMap<u64, usize>>,
-        coverage: usize,
     ) -> Vec<f64> {
         let abacus = self.get_abacus_by_total(count);
         let hist =
             Hist::from_abacus_for_window(abacus, self.graph_aux.as_ref(), indices, uncovered_bps);
-        let cov = Threshold::Absolute(coverage);
+        let cov = Threshold::Absolute(1);
         let growth = hist.calc_growth_union(&cov);
         growth
     }

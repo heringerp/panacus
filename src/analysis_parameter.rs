@@ -7,7 +7,6 @@ use strum_macros::{EnumIter, EnumString, EnumVariantNames};
 use serde::{Deserialize, Serialize};
 
 use crate::analyses::coverage_colors::CoverageColors;
-use crate::analyses::regional_completeness::RegionalCompleteness;
 use crate::analyses::regional_count::RegionalCount;
 use crate::analyses::regional_degree::RegionalDegree;
 use crate::analyses::regional_growth::RegionalGrowth;
@@ -215,23 +214,11 @@ pub enum AnalysisParameter {
     },
     RegionalGrowth {
         reference: String,
+        reference_subset: String,
         #[serde(default = "get_window_size")]
         window_size: usize,
         #[serde(default)]
         count_type: CountType,
-        #[serde(default = "get_coverage")]
-        coverage: usize,
-        #[serde(default)]
-        log_windows: bool,
-    },
-    RegionalCompleteness {
-        reference: String,
-        #[serde(default = "get_window_size")]
-        window_size: usize,
-        #[serde(default)]
-        count_type: CountType,
-        #[serde(default = "get_coverage")]
-        coverage: usize,
         #[serde(default)]
         log_windows: bool,
     },
@@ -320,9 +307,6 @@ impl AnalysisParameter {
             }
             r @ Self::RegionalGrowth { .. } => {
                 get_analysis_task!(RegionalGrowth, r)
-            }
-            r @ Self::RegionalCompleteness { .. } => {
-                get_analysis_task!(RegionalCompleteness, r)
             }
             r @ Self::RegionalCount { .. } => {
                 get_analysis_task!(RegionalCount, r)

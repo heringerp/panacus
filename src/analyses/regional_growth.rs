@@ -1,4 +1,3 @@
-use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
@@ -19,10 +18,10 @@ use super::{
 
 pub struct RegionalGrowth {
     reference_text: PathSegment,
+    reference_subset: String,
     window_size: usize,
     count_type: CountType,
     values: HashMap<PathSegment, Vec<Window>>,
-    coverage: usize,
     log_windows: bool,
 }
 
@@ -116,22 +115,28 @@ impl Analysis for RegionalGrowth {
 
 impl ConstructibleAnalysis for RegionalGrowth {
     fn from_parameter(parameter: crate::analysis_parameter::AnalysisParameter) -> Self {
-        let (reference, window_size, count_type, coverage, log_windows) = match parameter {
+        let (reference, reference_subset, window_size, count_type, log_windows) = match parameter {
             AnalysisParameter::RegionalGrowth {
                 reference,
+                reference_subset,
                 window_size,
                 count_type,
-                coverage,
                 log_windows,
-            } => (reference, window_size, count_type, coverage, log_windows),
+            } => (
+                reference,
+                reference_subset,
+                window_size,
+                count_type,
+                log_windows,
+            ),
             _ => panic!("Regional growth should only be called with correct parameter"),
         };
         Self {
             reference_text: PathSegment::from_str(&reference),
+            reference_subset,
             count_type,
             window_size,
             values: HashMap::new(),
-            coverage,
             log_windows,
         }
     }
@@ -180,9 +185,8 @@ impl RegionalGrowth {
         let avg_c = sum_c / sum_lens;
         let avg_alpha = sum_alpha / sum_lens;
         log::info!(
-            "Calculated growth for {} with cov = {}, avg r2 = {}, avg alpha = {}",
+            "Calculated growth for {} with avg r2 = {}, avg alpha = {}",
             self.count_type,
-            self.coverage,
             avg_c,
             avg_alpha
         );
@@ -251,12 +255,8 @@ impl RegionalGrowth {
                             );
                             let x: Vec<f64> = (1..hist.len()).map(|x| (x as f64)).collect();
                             let y = hist.into_iter().skip(1).collect::<Vec<f64>>();
-                            let growth = gb.get_growth_for_subset(
-                                self.count_type,
-                                &indices,
-                                uncovered_bps,
-                                self.coverage,
-                            );
+                            let growth =
+                                gb.get_growth_for_subset(self.count_type, &indices, uncovered_bps);
                             let f_new: Vec<f64> =
                                 growth.iter().tuple_windows().map(|(a, b)| b - a).collect();
                             let f_new_x: Vec<f64> =
@@ -359,12 +359,8 @@ impl RegionalGrowth {
                                 &indices,
                                 uncovered_bps.clone(),
                             );
-                            let growth = gb.get_growth_for_subset(
-                                self.count_type,
-                                &indices,
-                                uncovered_bps,
-                                self.coverage,
-                            );
+                            let growth =
+                                gb.get_growth_for_subset(self.count_type, &indices, uncovered_bps);
                             let x: Vec<f64> = (1..=hist.len()).map(|x| x as f64).collect();
                             let y: Vec<f64> = hist.into_iter().skip(1).collect();
                             if self.log_windows {
