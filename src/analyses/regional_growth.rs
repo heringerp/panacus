@@ -73,9 +73,9 @@ impl Analysis for RegionalGrowth {
                 name: gb.get_fname(),
                 labels: vec![
                     "Growth".to_string(),
-                    "c".to_string(),
-                    "Adapted c".to_string(),
-                    "Successfull fit".to_string(),
+                    // "c".to_string(),
+                    // "Adapted c".to_string(),
+                    // "Successfull fit".to_string(),
                 ],
                 is_diverging: true,
                 contains_outliers: false,
@@ -344,43 +344,46 @@ impl RegionalGrowth {
                 );
                 log::info!("Calculating growth for {} windows", windows.len());
                 let growths_of_windows: Vec<Window> = windows
-                    .par_iter()
-                    .map(|(window, start, end)| {
+                    .iter()
+                    .filter_map(|(window, start, end)| {
                         let params = {
-                            let indeces: Vec<usize> =
+                            let indices: HashSet<usize> =
                                 window.iter().map(|idx| idx.0 as usize).collect();
+                            let indices: Vec<usize> = indices.into_iter().collect();
+                            if indices.len() <= 1 {
+                                return None;
+                            }
                             let uncovered_bps = None;
+                            let hist = gb.get_hist_for_subset(
+                                self.count_type,
+                                &indices,
+                                uncovered_bps.clone(),
+                            );
                             let growth = gb.get_growth_for_subset(
                                 self.count_type,
-                                &indeces,
+                                &indices,
                                 uncovered_bps,
                                 self.coverage,
                             );
-                            let x: Vec<f64> = (1..=growth.len())
-                                .map(|x| (x as f64).log10())
-                                .map(|x| {
-                                    if x.is_infinite() && x.is_sign_negative() {
-                                        -1000.0
-                                    } else {
-                                        x
-                                    }
-                                })
-                                .collect();
-                            let y: Vec<f64> = vec![0.0]
-                                .into_iter()
-                                .chain(growth.into_iter())
-                                .tuple_windows()
-                                .map(|(x_prev, x_curr)| (x_curr - x_prev).log10())
-                                .map(|x| {
-                                    if x.is_infinite() && x.is_sign_negative() {
-                                        -1000.0
-                                    } else {
-                                        x
-                                    }
-                                })
-                                .collect();
-                            let huber = PowerLawIntercept::from(x.clone(), y.clone());
-                            let params = solve(huber);
+                            let x: Vec<f64> = (1..=hist.len()).map(|x| x as f64).collect();
+                            let y: Vec<f64> = hist.into_iter().skip(1).collect();
+                            if self.log_windows {
+                                x.iter().zip(y.iter()).zip(growth.iter()).for_each(
+                                    |((x_val, y_val), growth_val)| {
+                                        eprintln!(
+                                            "W {}-{}\t{}\t{}\t{}",
+                                            start + contig_start,
+                                            end + contig_start,
+                                            x_val,
+                                            y_val,
+                                            growth_val,
+                                        );
+                                    },
+                                );
+                            }
+                            eprintln!("Lens | x: {} | y: {}", x.len(), y.len());
+                            // let huber = PowerLawIntercept::from(x.clone(), y.clone());
+                            let params = vec![10.0, 1.0];
                             let r_squared = calculate_r_squared(&x, &y, params[0], params[1]);
                             vec![-params[0], r_squared]
                         };
@@ -389,7 +392,7 @@ impl RegionalGrowth {
                             end: *end + contig_start,
                             values: params,
                         };
-                        window
+                        Some(window)
                     })
                     .collect();
                 all_growths_of_windows

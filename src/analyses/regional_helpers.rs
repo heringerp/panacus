@@ -227,7 +227,7 @@ pub fn get_windows(
             }
         });
     }
-    ref_windows
+    let windows: Vec<(Vec<(ItemId, usize)>, usize, usize)> = ref_windows
         .into_iter()
         .map(|(window, start, end)| {
             (
@@ -271,7 +271,8 @@ pub fn get_windows(
                 end,
             )
         })
-        .collect()
+        .collect();
+    windows
 }
 
 pub fn get_edge_windows(
@@ -428,7 +429,7 @@ pub fn get_edge_windows(
             )
         })
         .collect::<Vec<_>>();
-    let windows = full_windows_with_end
+    let windows: Vec<(Vec<ItemId>, usize, usize)> = full_windows_with_end
         .into_iter()
         .map(|(window, start, end)| {
             let nodes_in_window = window.iter().map(|(node, _)| *node).collect::<HashSet<_>>();
