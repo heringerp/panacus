@@ -7,18 +7,10 @@ use std::str::{self, FromStr};
 use flate2::read::MultiGzDecoder;
 use quick_csv::Csv;
 use rayon::prelude::*;
-use strum_macros::{EnumString, EnumVariantNames};
 
 /* internal use */
 use crate::graph_broker::{CoverageMatrix, PathSegment, ThresholdContainer};
 use crate::util::*;
-
-#[derive(Debug, Clone, Copy, PartialEq, EnumString, EnumVariantNames)]
-#[strum(serialize_all = "lowercase")]
-pub enum OutputFormat {
-    Table,
-    Html,
-}
 
 pub fn bufreader_from_compressed_gfa(gfa_file: &str) -> BufReader<Box<dyn Read>> {
     log::info!("loading graph from {}", &gfa_file);

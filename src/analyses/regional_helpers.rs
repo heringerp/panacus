@@ -1,9 +1,8 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     iter::{self},
+    usize,
 };
-
-use itertools::Itertools;
 
 use crate::graph_broker::{Edge, ItemId, Orientation, PathSegment};
 
@@ -123,45 +122,157 @@ pub fn split_ref_paths<'a>(
     result
 }
 
-pub fn get_windows(
+fn get_window_grid(
+    window_size: usize,
+    contig_start: usize,
+    ref_length: usize,
+) -> Vec<(usize, usize)> {
+    let no_of_windows = (contig_start + ref_length) / window_size + 1;
+    let window_starts = (0..no_of_windows).map(|x| x * window_size);
+    let mut windows: Vec<(usize, usize)> = window_starts
+        .into_iter()
+        .map(|s| (s, s + window_size))
+        .filter(|(s, e)| *e > contig_start && *s <= contig_start + ref_length) // Filter out windows before and after the contig
+        .collect();
+
+    // Set the start of the first window to the start of the contig
+    windows[0] = (contig_start, windows[0].1);
+    // Set the end of the last window to the end of the contig
+    let last_index = windows.len() - 1;
+    let start_of_last = windows[last_index].0;
+    windows[last_index] = (start_of_last, contig_start + ref_length);
+    windows
+}
+
+fn get_window_ranges(
+    window_size: usize,
+    contig_start: usize,
+    ref_length: usize,
+    allowed_segments: &Vec<PathSegment>,
+) -> Vec<(usize, usize)> {
+    let windows = get_window_grid(window_size, contig_start, ref_length);
+
+    if allowed_segments.is_empty() {
+        return windows;
+    }
+
+    // Overlap prospective windows with allowed_segments
+    let mut allowed_segments = allowed_segments.clone();
+    allowed_segments.sort();
+    let allowed_segments: Vec<(usize, usize)> = allowed_segments
+        .into_iter()
+        .map(|s| {
+            (
+                s.start.expect("Ref subset has start"),
+                s.end.expect("Ref subset has end"),
+            )
+        })
+        .collect();
+
+    let mut wi = 0usize;
+    let mut si = 0usize;
+    let mut new_windows: Vec<(usize, usize)> = Vec::new();
+    while wi < windows.len() && si < allowed_segments.len() {
+        let window = windows[wi];
+        let segment = allowed_segments[si];
+
+        // No overlaps
+        if window.1 < segment.0 {
+            wi += 1;
+            continue;
+        } else if segment.1 < window.0 {
+            si += 1;
+            continue;
+        }
+
+        // Case:
+        // --win--         or      ---win---
+        //     --seg--              -seg-
+        if window.0 <= segment.0 {
+            if segment.1 > window.1 {
+                new_windows.push((segment.0, window.1));
+                wi += 1;
+            } else {
+                new_windows.push((segment.0, segment.1));
+                si += 1;
+            }
+        }
+        // Case:
+        //     --win--      or        -win-
+        //  --seg--                ---seg---
+        else {
+            if window.1 > segment.1 {
+                new_windows.push((window.0, segment.1));
+                si += 1;
+            } else {
+                new_windows.push((window.0, window.1));
+                wi += 1;
+            }
+        }
+    }
+    new_windows
+}
+
+fn cover_windows_with_reference_nodes(
+    window_ranges: Vec<(usize, usize)>,
     ref_nodes: &Vec<(ItemId, Orientation)>,
     node_lens: &Vec<u32>,
-    window_size: usize,
-    neighbors: &HashMap<(ItemId, Orientation), HashSet<ItemId>>,
     contig_start: usize,
-    log_windows: bool,
-) -> Vec<(Vec<(ItemId, usize)>, usize, usize)> {
-    let close_nodes = get_close_nodes(ref_nodes, neighbors);
-    let ref_length = get_ref_length(ref_nodes, node_lens) as usize;
-    let number_of_windows = (ref_length + (contig_start % window_size)).div_ceil(window_size);
-    let mut ref_windows: Vec<Vec<(ItemId, Orientation, usize, IncludedEnds)>> =
-        vec![Vec::new(); number_of_windows];
-    let mut bp_counter = 0;
+) -> Vec<Window> {
     let mut current_window_index = 0;
     let mut current_node_index = 0;
     let mut already_used_bps_of_node = 0;
-    while bp_counter < ref_length {
+    let mut ref_windows: Vec<Window> = window_ranges
+        .into_iter()
+        .map(|(s, e)| (Vec::new(), s, e))
+        .collect();
+
+    let mut bp_pos = contig_start;
+
+    // While last node is not yet used
+    while current_node_index < ref_nodes.len() {
+        // Quit if there are still nodes left, but no window
+        if current_window_index >= ref_windows.len() {
+            break;
+        }
+
+        // Check if end of current node is before the start of current window
+        if (bp_pos + node_lens[ref_nodes[current_node_index].0 .0 as usize] as usize)
+            < ref_windows[current_window_index].1
+        {
+            bp_pos += node_lens[ref_nodes[current_node_index].0 .0 as usize] as usize;
+            current_node_index += 1;
+            already_used_bps_of_node = 0;
+            continue;
+        }
+
+        // Length the window should have
+        let window_length =
+            ref_windows[current_window_index].2 - ref_windows[current_window_index].1;
+
+        // Length the window currently has
         let current_window_length: usize = ref_windows[current_window_index]
+            .0
             .iter()
             .map(|(_, _, l, _)| l)
             .sum();
-        let remaining_bps_in_window = if current_window_index == 0 {
-            window_size - (contig_start % window_size) - current_window_length as usize
-        } else {
-            window_size - current_window_length as usize
-        };
-        let remaining_bps_in_window = if remaining_bps_in_window > ref_length {
-            ref_length
-        } else {
-            remaining_bps_in_window
-        };
-        let current_node_length = node_lens[ref_nodes[current_node_index].0 .0 as usize] as usize
+
+        // If this is the first node of the window, all the bps that are before the start of the
+        // window have already been used
+        if current_window_length == 0 {
+            already_used_bps_of_node = ref_windows[current_window_index].1 - bp_pos;
+        }
+
+        let remaining_bps_in_window = window_length - current_window_length;
+        let remaining_node_length = node_lens[ref_nodes[current_node_index].0 .0 as usize] as usize
             - already_used_bps_of_node;
-        if current_node_length <= remaining_bps_in_window {
-            ref_windows[current_window_index].push((
+
+        // Remainder of node fits inside remainder of window
+        if remaining_node_length <= remaining_bps_in_window {
+            ref_windows[current_window_index].0.push((
                 ref_nodes[current_node_index].0,
                 ref_nodes[current_node_index].1,
-                current_node_length as usize,
+                remaining_node_length as usize,
                 // either both or back
                 if current_window_length == 0 && already_used_bps_of_node > 0 {
                     IncludedEnds::Back
@@ -169,15 +280,15 @@ pub fn get_windows(
                     IncludedEnds::Both
                 },
             ));
-            bp_counter += current_node_length;
+            bp_pos += node_lens[ref_nodes[current_node_index].0 .0 as usize] as usize;
             current_node_index += 1;
             already_used_bps_of_node = 0;
-            if current_node_length == remaining_bps_in_window {
+            if remaining_node_length == remaining_bps_in_window {
                 current_window_index += 1;
             }
         } else {
             let cut_node_length = remaining_bps_in_window;
-            ref_windows[current_window_index].push((
+            ref_windows[current_window_index].0.push((
                 ref_nodes[current_node_index].0,
                 ref_nodes[current_node_index].1,
                 cut_node_length as usize, // either none or front
@@ -187,46 +298,20 @@ pub fn get_windows(
                     IncludedEnds::Front
                 },
             ));
-            bp_counter += cut_node_length;
             current_window_index += 1;
             already_used_bps_of_node += cut_node_length;
         };
     }
-    let first_window = if contig_start % window_size != 0 {
-        window_size - (contig_start % window_size)
-    } else {
-        window_size
-    };
-    let ref_windows = ref_windows
-        .into_iter()
-        .enumerate()
-        .zip(
-            std::iter::once(0).chain(std::iter::successors(Some(first_window), |x| {
-                Some(x + window_size)
-            })),
-        )
-        .zip(std::iter::successors(Some(first_window), |x| {
-            x.checked_add(window_size)
-        }))
-        .map(|(((i, window), start), end)| {
-            (
-                window,
-                start,
-                if i < number_of_windows - 1 {
-                    end
-                } else {
-                    bp_counter
-                },
-            )
-        })
-        .collect::<Vec<_>>();
-    if log_windows {
-        ref_windows.iter().for_each(|(v, s, e)| {
-            if v.len() == 1 {
-                eprintln!("S {}-{} contains only a single reference node", s, e);
-            }
-        });
-    }
+
+    ref_windows
+}
+
+fn augment_windows_with_non_reference_nodes(
+    ref_nodes: &Vec<(ItemId, Orientation)>,
+    ref_windows: Vec<Window>,
+    neighbors: &HashMap<(ItemId, Orientation), HashSet<ItemId>>,
+) -> Vec<(Vec<(ItemId, usize)>, usize, usize)> {
+    let close_nodes = get_close_nodes(ref_nodes, neighbors);
     let windows: Vec<(Vec<(ItemId, usize)>, usize, usize)> = ref_windows
         .into_iter()
         .map(|(window, start, end)| {
@@ -272,6 +357,75 @@ pub fn get_windows(
             )
         })
         .collect();
+    windows
+}
+
+type Window = (
+    Vec<(ItemId, Orientation, usize, IncludedEnds)>,
+    usize,
+    usize,
+);
+
+fn merge_small_windows(
+    ref_windows: Vec<Window>,
+    window_size: usize,
+    contig_start: usize,
+    ref_length: usize,
+) -> Vec<Window> {
+    let window_grid = get_window_grid(window_size, contig_start, ref_length);
+    let mut window_grid: Vec<Window> = window_grid
+        .into_iter()
+        .map(|(s, e)| (Vec::new(), s, e))
+        .collect();
+    for window in ref_windows {
+        for grid_window in window_grid.iter_mut() {
+            if window.1 >= grid_window.1 && window.2 <= grid_window.2 {
+                grid_window.0.extend(window.0.into_iter());
+                break;
+            }
+        }
+    }
+    window_grid
+}
+
+pub fn get_windows(
+    ref_nodes: &Vec<(ItemId, Orientation)>,
+    node_lens: &Vec<u32>,
+    window_size: usize,
+    neighbors: &HashMap<(ItemId, Orientation), HashSet<ItemId>>,
+    contig_start: usize,
+    _log_windows: bool,
+    allowed_segments: &Vec<PathSegment>,
+    should_merge_small_windows: bool,
+) -> Vec<(Vec<(ItemId, usize)>, usize, usize)> {
+    let ref_length = get_ref_length(ref_nodes, node_lens) as usize;
+
+    // Get window ranges, i.e., (start, end)-coordinates
+    let window_ranges: Vec<(usize, usize)> =
+        get_window_ranges(window_size, contig_start, ref_length, allowed_segments);
+
+    // Cover the windows with reference nodes
+    let ref_windows: Vec<Window> =
+        cover_windows_with_reference_nodes(window_ranges, ref_nodes, node_lens, contig_start);
+
+    if true {
+        ref_windows.iter().for_each(|(v, _s, _e)| {
+            eprintln!("Nodes: {}", v.len());
+            //if v.len() == 1 {
+            //    eprintln!("S {}-{} contains only a single reference node", s, e);
+            //}
+        });
+    }
+
+    // If the flag is set merge windows that are inside the same window
+    let ref_windows = if should_merge_small_windows {
+        merge_small_windows(ref_windows, window_size, contig_start, ref_length)
+    } else {
+        ref_windows
+    };
+
+    // Add close non-reference nodes to windows
+    let windows = augment_windows_with_non_reference_nodes(ref_nodes, ref_windows, neighbors);
     windows
 }
 

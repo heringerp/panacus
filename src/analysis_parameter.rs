@@ -214,7 +214,9 @@ pub enum AnalysisParameter {
     },
     RegionalGrowth {
         reference: String,
-        reference_subset: String,
+        reference_subset: Option<String>,
+        #[serde(default)]
+        merge_small_windows: bool,
         #[serde(default = "get_window_size")]
         window_size: usize,
         #[serde(default)]
@@ -266,10 +268,6 @@ fn get_window_size() -> usize {
 
 fn get_threshold() -> usize {
     1_000
-}
-
-fn get_coverage() -> usize {
-    1
 }
 
 impl AnalysisParameter {

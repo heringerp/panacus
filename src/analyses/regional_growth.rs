@@ -1,13 +1,17 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::File,
+    io::BufReader,
+};
 
 use itertools::Itertools;
-use ml_helpers::other_regression::power_law_with_intercept::{solve, PowerLawIntercept};
 
 use crate::{
     analyses::regional_helpers::get_edge_windows,
     analysis_parameter::AnalysisParameter,
     graph_broker::{GraphBroker, ItemId, Orientation, PathSegment},
     html_report::{AnalysisSection, ReportItem, Window},
+    io::parse_bed_to_path_segments,
     util::{get_default_plot_downloads, CountType},
 };
 
@@ -19,6 +23,7 @@ use super::{
 pub struct RegionalGrowth {
     reference_text: PathSegment,
     reference_subset: String,
+    merge_small_windows: bool,
     window_size: usize,
     count_type: CountType,
     values: HashMap<PathSegment, Vec<Window>>,
@@ -115,16 +120,25 @@ impl Analysis for RegionalGrowth {
 
 impl ConstructibleAnalysis for RegionalGrowth {
     fn from_parameter(parameter: crate::analysis_parameter::AnalysisParameter) -> Self {
-        let (reference, reference_subset, window_size, count_type, log_windows) = match parameter {
+        let (
+            reference,
+            reference_subset,
+            merge_small_windows,
+            window_size,
+            count_type,
+            log_windows,
+        ) = match parameter {
             AnalysisParameter::RegionalGrowth {
                 reference,
                 reference_subset,
+                merge_small_windows,
                 window_size,
                 count_type,
                 log_windows,
             } => (
                 reference,
-                reference_subset,
+                reference_subset.unwrap_or_default(),
+                merge_small_windows,
                 window_size,
                 count_type,
                 log_windows,
@@ -134,6 +148,7 @@ impl ConstructibleAnalysis for RegionalGrowth {
         Self {
             reference_text: PathSegment::from_str(&reference),
             reference_subset,
+            merge_small_windows,
             count_type,
             window_size,
             values: HashMap::new(),
@@ -205,6 +220,15 @@ impl RegionalGrowth {
         let ref_paths = split_ref_paths(ref_paths);
         let node_lens = gb.get_node_lens();
         let mut all_growths_of_windows: HashMap<PathSegment, Vec<Window>> = HashMap::new();
+        let allowed_segments: Vec<PathSegment> = if self.reference_subset.is_empty() {
+            Vec::new()
+        } else {
+            let file =
+                File::open(&self.reference_subset).expect("Reference subset is a valid file");
+            let mut data = BufReader::new(file);
+            let use_block_info = true;
+            parse_bed_to_path_segments(&mut data, use_block_info)
+        };
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
                 let contig_start = contig_id.start.unwrap_or_default();
@@ -215,6 +239,8 @@ impl RegionalGrowth {
                     &neighbors,
                     contig_start,
                     self.log_windows,
+                    &allowed_segments,
+                    self.merge_small_windows,
                 );
                 log::info!("Calculating growth for {} windows", windows.len());
                 let growths_of_windows: Vec<Window> = windows
@@ -253,13 +279,13 @@ impl RegionalGrowth {
                                 &indices,
                                 uncovered_bps.clone(),
                             );
-                            let x: Vec<f64> = (1..hist.len()).map(|x| (x as f64)).collect();
+                            let x: Vec<f64> = (1..hist.len()).map(|x| x as f64).collect();
                             let y = hist.into_iter().skip(1).collect::<Vec<f64>>();
                             let growth =
                                 gb.get_growth_for_subset(self.count_type, &indices, uncovered_bps);
                             let f_new: Vec<f64> =
                                 growth.iter().tuple_windows().map(|(a, b)| b - a).collect();
-                            let f_new_x: Vec<f64> =
+                            let _f_new_x: Vec<f64> =
                                 (2..f_new.len() + 2).map(|x| x as f64).collect();
                             if self.log_windows {
                                 let node_ids_to_names = gb.get_node_names();
@@ -289,13 +315,17 @@ impl RegionalGrowth {
                                     },
                                 );
                             }
-                            let power_law =
-                                PowerLawIntercept::from(f_new_x[1..].to_vec(), f_new[1..].to_vec());
-                            let params = solve(power_law);
-                            let alpha = params[1];
-                            let c = params[2];
-                            let c_adapted = c / params[0];
-                            let success_bit = params[3];
+                            //let power_law =
+                            //    PowerLawIntercept::from(f_new_x[1..].to_vec(), f_new[1..].to_vec());
+                            //let params = solve(power_law);
+                            //let alpha = params[1];
+                            let alpha = 1.0;
+                            //let c = params[2];
+                            let c = 10.0;
+                            //let c_adapted = c / params[0];
+                            let c_adapted = 0.5;
+                            //let success_bit = params[3];
+                            let success_bit = 1.0;
                             if success_bit < 0.5 {
                                 return None;
                             }

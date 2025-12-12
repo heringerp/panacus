@@ -152,6 +152,8 @@ impl RegionalDegree {
                     &neighbors,
                     contig_start,
                     false,
+                    &Vec::new(),
+                    false,
                 );
                 let degrees_of_windows: Vec<(f64, usize, usize)> = windows
                     .iter()

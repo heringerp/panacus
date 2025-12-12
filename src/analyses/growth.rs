@@ -365,7 +365,7 @@ impl Growth {
 }
 
 fn get_regression(hist: &Vec<f64>) -> (f64, f64) {
-    let x: Vec<f64> = (1..hist.len()).map(|x| (x as f64)).collect();
+    let x: Vec<f64> = (1..hist.len()).map(|x| x as f64).collect();
     let log_x: Vec<f64> = x
         .iter()
         .map(|x| x.log10())
