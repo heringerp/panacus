@@ -234,6 +234,8 @@ impl RegionalCount {
                     &neighbors,
                     &edge2id,
                     contig_start,
+                    &Vec::new(),
+                    false,
                 );
                 log::info!("Calculating count for {} windows", windows.len());
                 let counts_of_windows: Vec<(f64, usize, usize)> = windows

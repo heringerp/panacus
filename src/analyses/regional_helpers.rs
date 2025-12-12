@@ -436,6 +436,8 @@ pub fn get_edge_windows(
     neighbors: &HashMap<(ItemId, Orientation), HashSet<(ItemId, Orientation)>>,
     edge2id: &HashMap<Edge, ItemId>,
     contig_start: usize,
+    allowed_segments: &Vec<PathSegment>,
+    should_merge_small_windows: bool,
 ) -> Vec<(Vec<ItemId>, usize, usize)> {
     let close_nodes = get_close_nodes(
         ref_nodes,
@@ -445,93 +447,31 @@ pub fn get_edge_windows(
             .collect(),
     );
     let ref_length = get_ref_length(ref_nodes, node_lens) as usize;
-    let number_of_windows = (ref_length + (contig_start % window_size)).div_ceil(window_size);
-    let mut ref_windows: Vec<Vec<(ItemId, Orientation, usize, IncludedEnds)>> =
-        vec![Vec::new(); number_of_windows];
-    let mut bp_counter = 0;
-    let mut current_window_index = 0;
-    let mut current_node_index = 0;
-    let mut already_used_bps_of_node = 0;
-    while bp_counter < ref_length {
-        let current_window_length: usize = ref_windows[current_window_index]
-            .iter()
-            .map(|(_, _, l, _)| l)
-            .sum();
-        let remaining_bps_in_window = if current_window_index == 0 {
-            window_size - (contig_start % window_size) - current_window_length as usize
-        } else {
-            window_size - current_window_length as usize
-        };
-        let remaining_bps_in_window = if remaining_bps_in_window > ref_length {
-            ref_length
-        } else {
-            remaining_bps_in_window
-        };
-        let current_node_length = node_lens[ref_nodes[current_node_index].0 .0 as usize] as usize
-            - already_used_bps_of_node;
-        if current_node_length <= remaining_bps_in_window {
-            ref_windows[current_window_index].push((
-                ref_nodes[current_node_index].0,
-                ref_nodes[current_node_index].1,
-                current_node_length as usize,
-                // either both or back
-                if current_window_length == 0 && already_used_bps_of_node > 0 {
-                    IncludedEnds::Back
-                } else {
-                    IncludedEnds::Both
-                },
-            ));
-            bp_counter += current_node_length;
-            current_node_index += 1;
-            already_used_bps_of_node = 0;
-            if current_node_length == remaining_bps_in_window {
-                current_window_index += 1;
-            }
-        } else {
-            let cut_node_length = remaining_bps_in_window;
-            ref_windows[current_window_index].push((
-                ref_nodes[current_node_index].0,
-                ref_nodes[current_node_index].1,
-                cut_node_length as usize, // either none or front
-                if current_window_length == 0 && already_used_bps_of_node > 0 {
-                    IncludedEnds::None
-                } else {
-                    IncludedEnds::Front
-                },
-            ));
-            bp_counter += cut_node_length;
-            current_window_index += 1;
-            already_used_bps_of_node += cut_node_length;
-        };
+
+    // Get window ranges, i.e., (start, end)-coordinates
+    let window_ranges: Vec<(usize, usize)> =
+        get_window_ranges(window_size, contig_start, ref_length, allowed_segments);
+
+    // Cover the windows with reference nodes
+    let ref_windows: Vec<Window> =
+        cover_windows_with_reference_nodes(window_ranges, ref_nodes, node_lens, contig_start);
+
+    if true {
+        ref_windows.iter().for_each(|(v, _s, _e)| {
+            eprintln!("Nodes: {}", v.len());
+            //if v.len() == 1 {
+            //    eprintln!("S {}-{} contains only a single reference node", s, e);
+            //}
+        });
     }
-    let first_window = if contig_start % window_size != 0 {
-        window_size - (contig_start % window_size)
+
+    // If the flag is set merge windows that are inside the same window
+    let ref_windows = if should_merge_small_windows {
+        merge_small_windows(ref_windows, window_size, contig_start, ref_length)
     } else {
-        window_size
+        ref_windows
     };
-    let ref_windows = ref_windows
-        .into_iter()
-        .enumerate()
-        .zip(
-            std::iter::once(0).chain(std::iter::successors(Some(first_window), |x| {
-                Some(x + window_size)
-            })),
-        )
-        .zip(std::iter::successors(Some(first_window), |x| {
-            x.checked_add(window_size)
-        }))
-        .map(|(((i, window), start), end)| {
-            (
-                window,
-                start,
-                if i < number_of_windows - 1 {
-                    end
-                } else {
-                    bp_counter
-                },
-            )
-        })
-        .collect::<Vec<_>>();
+
     let full_windows_with_end: Vec<(Vec<(ItemId, IncludedEnds)>, usize, usize)> = ref_windows
         .into_iter()
         .map(|(window, start, end)| {

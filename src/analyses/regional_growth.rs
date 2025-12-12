@@ -361,6 +361,15 @@ impl RegionalGrowth {
         let ref_paths = split_ref_paths(ref_paths);
         let node_lens = gb.get_node_lens();
         let mut all_growths_of_windows: HashMap<PathSegment, Vec<Window>> = HashMap::new();
+        let allowed_segments: Vec<PathSegment> = if self.reference_subset.is_empty() {
+            Vec::new()
+        } else {
+            let file =
+                File::open(&self.reference_subset).expect("Reference subset is a valid file");
+            let mut data = BufReader::new(file);
+            let use_block_info = true;
+            parse_bed_to_path_segments(&mut data, use_block_info)
+        };
         for (sequence_id, sequence) in ref_paths {
             for (contig_id, contig) in sequence {
                 let contig_start = contig_id.start.unwrap_or_default();
@@ -371,6 +380,8 @@ impl RegionalGrowth {
                     &neighbors,
                     &edge2id,
                     contig_start,
+                    &allowed_segments,
+                    self.merge_small_windows,
                 );
                 log::info!("Calculating growth for {} windows", windows.len());
                 let growths_of_windows: Vec<Window> = windows
