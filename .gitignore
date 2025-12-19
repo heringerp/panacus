@@ -20,3 +20,5 @@ etc/package.json
 /*.json
 /*.txt
 *.ipynb
+*.log
+*.bed
