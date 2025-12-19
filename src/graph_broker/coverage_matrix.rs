@@ -1,3 +1,4 @@
+use core::panic;
 use std::{
     collections::HashMap,
     io::{BufWriter, Error, Write},
@@ -442,14 +443,53 @@ impl CoverageMatrix {
         result
     }
 
+    fn write_group_totals<W: Write>(
+        &self,
+        out: &mut BufWriter<W>,
+        graph_storage: &GraphStorage,
+    ) -> Result<(), Error> {
+        log::info!("Reporting group totals");
+        let mut counts = vec![0; self.groups.len()];
+        let mut it = self.r.iter().tuple_windows().enumerate();
+        // ignore first entry
+        it.next();
+        for (j, (&row_start, &row_end)) in it {
+            for i in row_start..row_end {
+                let col = self.c[i];
+                let value = match &self.v {
+                    Some(v) => v[i],
+                    None => 1,
+                };
+                counts[col as usize] += match self.count {
+                    CountType::Node | CountType::Edge => value,
+                    CountType::Bp => {
+                        value
+                            * (graph_storage.node_lens[j]
+                                - *self.uncovered_bps.get(&(i as ItemIdSize)).unwrap_or(&0) as u32)
+                    }
+                    CountType::All => panic!("Count Type all is not valid here"),
+                };
+            }
+        }
+        writeln!(out, "group\ttotal")?;
+        for (group, count) in self.groups.iter().zip(counts.iter()) {
+            writeln!(out, "{}\t{}", group, count)?;
+        }
+        Ok(())
+    }
+
     pub fn to_tsv<W: Write>(
         &self,
         total: bool,
+        by_group: bool,
         out: &mut BufWriter<W>,
         graph_storage: &GraphStorage,
     ) -> Result<(), Error> {
         // create mapping from numerical node ids to original node identifiers
         log::info!("reporting coverage table");
+        if total && by_group {
+            return self.write_group_totals(out, graph_storage);
+        }
         let dummy = Vec::new();
         let mut id2node: Vec<&Vec<u8>> = vec![&dummy; graph_storage.node_count + 1];
         // TODO: fix issue

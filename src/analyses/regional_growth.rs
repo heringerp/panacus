@@ -5,6 +5,7 @@ use std::{
 };
 
 use itertools::Itertools;
+use ml_helpers::linear_regression::huber_regressor::{solve, HuberRegressor};
 
 use crate::{
     analyses::regional_helpers::get_edge_windows,
@@ -77,6 +78,7 @@ impl Analysis for RegionalGrowth {
                 name: gb.get_fname(),
                 labels: vec![
                     "Growth".to_string(),
+                    "Hapax-Ratio".to_string(),
                     // "c".to_string(),
                     // "Adapted c".to_string(),
                     // "Successfull fit".to_string(),
@@ -179,15 +181,6 @@ impl RegionalGrowth {
             .iter()
             .map(|(_s, v)| v.iter().map(|w| (w.end - w.start) as u64).sum::<u64>())
             .sum::<u64>() as f64;
-        let sum_c = self
-            .values
-            .iter()
-            .map(|(_s, v)| {
-                v.iter()
-                    .map(|w| (w.end - w.start) as f64 * w.values[1])
-                    .sum::<f64>()
-            })
-            .sum::<f64>();
         let sum_alpha = self
             .values
             .iter()
@@ -197,12 +190,10 @@ impl RegionalGrowth {
                     .sum::<f64>()
             })
             .sum::<f64>();
-        let avg_c = sum_c / sum_lens;
         let avg_alpha = sum_alpha / sum_lens;
         log::info!(
-            "Calculated growth for {} with avg r2 = {}, avg alpha = {}",
+            "Calculated growth for {} with avg alpha = {}",
             self.count_type,
-            avg_c,
             avg_alpha
         );
     }
@@ -285,8 +276,10 @@ impl RegionalGrowth {
                                 gb.get_growth_for_subset(self.count_type, &indices, uncovered_bps);
                             let f_new: Vec<f64> =
                                 growth.iter().tuple_windows().map(|(a, b)| b - a).collect();
-                            let _f_new_x: Vec<f64> =
+                            let f_new_x: Vec<f64> =
                                 (2..f_new.len() + 2).map(|x| x as f64).collect();
+                            let ln_x: Vec<f64> = f_new_x.into_iter().map(|x| x.ln()).collect();
+                            let ln_y: Vec<f64> = f_new.into_iter().map(|y| y.ln()).collect();
                             if self.log_windows {
                                 let node_ids_to_names = gb.get_node_names();
                                 let nodes_text = window
@@ -315,21 +308,24 @@ impl RegionalGrowth {
                                     },
                                 );
                             }
-                            //let power_law =
-                            //    PowerLawIntercept::from(f_new_x[1..].to_vec(), f_new[1..].to_vec());
-                            //let params = solve(power_law);
-                            //let alpha = params[1];
-                            let alpha = 1.0;
-                            //let c = params[2];
-                            let c = 10.0;
-                            //let c_adapted = c / params[0];
-                            let c_adapted = 0.5;
-                            //let success_bit = params[3];
-                            let success_bit = 1.0;
-                            if success_bit < 0.5 {
+                            if ln_y.iter().all(|y| y.is_finite()) {
+                                let huber = HuberRegressor::from(ln_x, ln_y);
+                                let params = solve(huber);
+                                let alpha = -params[0];
+                                log::info!(
+                                    "Calculating growth for {}-{}, {},{}",
+                                    start + contig_start,
+                                    end + contig_start,
+                                    params[0],
+                                    params[1]
+                                );
+                                let hapax_ratio = y[0] / y.iter().sum::<f64>();
+                                //let alpha = 1.0;
+                                vec![alpha, hapax_ratio]
+                            } else {
+                                // If ln(y) contains infs, there is no alpha value for this window
                                 return None;
                             }
-                            vec![alpha, c, c_adapted, success_bit]
                         };
                         let window = Window {
                             start: *start + contig_start,

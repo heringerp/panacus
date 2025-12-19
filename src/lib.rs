@@ -225,9 +225,9 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
     if let Some(ordered_histgrowth) = commands::ordered_histgrowth::get_instructions(&args) {
         instructions.extend(ordered_histgrowth?);
     }
-    // if let Some(table) = commands::table::get_instructions(&args) {
-    //     instructions.extend(table?);
-    // }
+    if let Some(table) = commands::table::get_instructions(&args) {
+        instructions.extend(table?);
+    }
     if let Some(counts) = commands::node_distribution::get_instructions(&args) {
         instructions.extend(counts?);
     }

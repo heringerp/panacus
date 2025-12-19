@@ -410,13 +410,16 @@ impl GraphBroker {
     pub fn write_abacus_by_group<W: Write>(
         &self,
         total: bool,
+        by_group: bool,
         out: &mut BufWriter<W>,
     ) -> Result<(), Error> {
         Self::check_and_error(self.group_abacus.as_ref(), "abacus_by_group");
-        self.group_abacus
-            .as_ref()
-            .unwrap()
-            .to_tsv(total, out, self.graph_aux.as_ref().unwrap())
+        self.group_abacus.as_ref().unwrap().to_tsv(
+            total,
+            by_group,
+            out,
+            self.graph_aux.as_ref().unwrap(),
+        )
     }
 
     fn set_graph_mask(&mut self) -> Result<(), Error> {

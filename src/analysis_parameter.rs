@@ -175,6 +175,7 @@ pub enum AnalysisParameter {
         count_type: CountType,
 
         total: bool,
+        by_group: bool,
         order: Option<String>,
     },
     NodeDistribution {

@@ -17,14 +17,16 @@ impl Analysis for Table {
         gb: Option<&crate::graph_broker::GraphBroker>,
     ) -> anyhow::Result<String> {
         if let Some(gb) = gb {
-            let total = match self.parameter {
-                AnalysisParameter::Table { total, .. } => total,
+            let (total, by_group) = match self.parameter {
+                AnalysisParameter::Table {
+                    total, by_group, ..
+                } => (total, by_group),
                 _ => {
                     panic!("Table analysis needs a table parameter")
                 }
             };
             let mut buf = BufWriter::new(Vec::new());
-            gb.write_abacus_by_group(total, &mut buf)?;
+            gb.write_abacus_by_group(total, by_group, &mut buf)?;
             let bytes = buf.into_inner()?;
             let mut string = write_metadata_comments()?;
             string.push_str(&String::from_utf8(bytes)?);
