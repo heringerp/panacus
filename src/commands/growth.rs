@@ -1,6 +1,10 @@
 use clap::{arg, Arg, ArgMatches, Command};
 
-use crate::analysis_parameter::{AnalysisParameter, AnalysisRun, Grouping};
+use crate::{
+    analysis_parameter::{AnalysisParameter, AnalysisRun, Grouping},
+    clap_enum_variants,
+    util::CountType,
+};
 
 pub fn get_subcommand() -> Command {
     Command::new("growth")
@@ -14,6 +18,7 @@ pub fn get_subcommand() -> Command {
             arg!(-S --"groupby-sample" "Merge counts from paths belonging to same sample (ONLY IN GFA MODE)"),
             arg!(-h --hist "Also include histogram in output (ONLY IN GFA MODE)"),
             arg!(-a --alpha "Include alpha value as a comment in the output"),
+            Arg::new("count").help("Graph quantity to be counted").default_value("node").ignore_case(true).short('c').long("count").value_parser(clap_enum_variants!(CountType)),
             Arg::new("coverage").help("Ignore all countables with a coverage lower than the specified threshold. The coverage of a countable corresponds to the number of path/walk that contain it. Repeated appearances of a countable in the same path/walk are counted as one. You can pass a comma-separated list of coverage thresholds, each one will produce a separated growth curve (e.g., --coverage 2,3). Use --quorum to set a threshold in conjunction with each coverage (e.g., --quorum 0.5,0.9)")
             .short('l').long("coverage").default_value("1"),
             Arg::new("quorum").help("Unlike the --coverage parameter, which specifies a minimum constant number of paths for all growth point m (1 <= m <= num_paths), --quorum adjust the threshold based on m. At each m, a countable is counted in the average growth if the countable is contained in at least floor(m*quorum) paths. Example: A quorum of 0.9 requires a countable to be in 90% of paths for each subset size m. At m=10, it must appear in at least 9 paths. At m=100, it must appear in at least 90 paths. A quorum of 1 (100%) requires presence in all paths of the subset, corresponding to the core. Default: 0, a countable counts if it is present in any path at each growth point. Specify multiple quorum values with a comma-separated list (e.g., --quorum 0.5,0.9). Use --coverage to set static path thresholds in conjunction with variable quorum percentages (e.g., --coverage 5,10).")
@@ -28,6 +33,10 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, an
         let quorum = args.get_one::<String>("quorum").cloned();
         let add_hist = args.get_flag("hist");
         let add_alpha = args.get_flag("alpha");
+        let count = args
+            .get_one::<CountType>("count")
+            .expect("hist subcommand has count type")
+            .to_owned();
         let graph = args
             .get_one::<String>("file")
             .expect("growth subcommand has gfa file")
@@ -55,12 +64,15 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, an
             exclude,
             grouping,
             false,
-            vec![AnalysisParameter::Growth {
-                coverage,
-                quorum,
-                add_hist,
-                add_alpha,
-            }],
+            vec![
+                AnalysisParameter::Hist { count_type: count },
+                AnalysisParameter::Growth {
+                    coverage,
+                    quorum,
+                    add_hist,
+                    add_alpha,
+                },
+            ],
         )]))
     } else {
         None
