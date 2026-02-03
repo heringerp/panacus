@@ -22,3 +22,4 @@ etc/package.json
 *.ipynb
 *.log
 *.bed
+.vs
