@@ -2,7 +2,7 @@ use crate::clap_enum_variants_no_all;
 use clap::{arg, Arg, ArgMatches, Command};
 use strum::VariantNames;
 
-use crate::analysis_parameter::{AnalysisParameter, AnalysisRun, ClusterMethod, Grouping};
+use crate::analysis_parameter::{AnalysisParameter, AnalysisRun, Grouping};
 
 use crate::util::CountType;
 
@@ -23,8 +23,7 @@ pub fn get_subcommand() -> Command {
 }
 
 pub fn get_instructions(args: &ArgMatches) -> Option<anyhow::Result<Vec<AnalysisRun>>> {
-
-if let Some(args) = args.subcommand_matches("table") {
+    if let Some(args) = args.subcommand_matches("table") {
         let total = args.get_flag("total");
         let order = args.get_one::<String>("order").cloned();
         let graph = args
@@ -35,7 +34,7 @@ if let Some(args) = args.subcommand_matches("table") {
             .get_one::<CountType>("count")
             .expect("hist subcommand has count type")
             .to_owned();
-      
+
         let subset = args
             .get_one::<String>("subset")
             .cloned()
@@ -62,7 +61,7 @@ if let Some(args) = args.subcommand_matches("table") {
             vec![AnalysisParameter::Table {
                 count_type: count,
                 order,
-                total
+                total,
             }],
         )];
         Some(Ok(parameters))
