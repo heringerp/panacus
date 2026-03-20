@@ -243,6 +243,12 @@ impl Info {
 
     fn get_group_bar(&self, graph: &str, countable: &str) -> ReportItem {
         let groups = &self.group_info.as_ref().unwrap().groups;
+        log::info!(
+            "Gotten {} groups for graph {} and countable {}",
+            groups.len(),
+            graph,
+            countable
+        );
         let (labels, values): (Vec<_>, Vec<_>) = if countable == "node" {
             groups.iter().map(|(k, v)| (k.to_string(), v.0)).unzip()
         } else {
@@ -542,10 +548,10 @@ impl GroupInfo {
         let groups = gb.get_groups();
         let mut group_map: HashMap<String, (u32, u32)> = HashMap::new();
         for (k, v) in gb.get_path_lens() {
-            if !groups.contains_key(k) {
+            if !groups.contains_key(&k.clear_coords()) {
                 continue;
             }
-            let group = groups[k].clone();
+            let group = groups[&k.clear_coords()].clone();
             let tmp = group_map.entry(group).or_insert((0, 0));
             tmp.0 += v.0;
             tmp.1 += v.1;
