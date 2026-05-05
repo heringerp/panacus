@@ -6,7 +6,7 @@ import sys
 from collections import Counter, defaultdict
 
 
-def parse_variant(line, filter):
+def parse_variant(line, filter, remove_zero):
     fields = line.split("\t")
     result = {"chrom": fields[0], "pos": fields[1], "id": fields[2]}
     samples = fields[9:]
@@ -31,7 +31,9 @@ def parse_variant(line, filter):
         if filter is not None:
             haplotypes = [h if h in valid_alleles else "0" for h in haplotypes]
         counter.update(haplotypes)
-    # del counter['0']
+    del counter['.']
+    if remove_zero:
+        del counter['0']
     # mc = counter.most_common(1)[0][0]
     # del counter[mc]
     result["counter"] = counter
@@ -60,6 +62,9 @@ def main():
     parser.add_argument("-r", "--regionalize", help="Split vcf into regions",
                         action="store_true")
     parser.add_argument("-w", "--window_size", default="1m")
+    parser.add_argument('-z', '--remove_zero',
+                        help="Removes the reference allele",
+                        action="store_true")
 
     args = parser.parse_args()
     logging.info(f"Converting {args.filename}")
@@ -79,7 +84,7 @@ def main():
             if line.startswith('#'):
                 continue
 
-            variant, curr_no_haplotypes = parse_variant(line, filter)
+            variant, curr_no_haplotypes = parse_variant(line, filter, args.remove_zero)
             window = get_window_starts(variant["pos"], window_size) if args.regionalize else 0
             if no_haplotypes == -1:
                 no_haplotypes = curr_no_haplotypes + 1
@@ -92,7 +97,7 @@ def main():
                     if allele == 0:
                         allele_value += 1
                     allele_counts[window][allele_value] += 1
-            if '0' not in variant["counter"] and False:
+            if '0' not in variant["counter"] and not args.remove_zero:
                 allele_counts[window][1] += 1
             no_lines += 1
     allele_counts_lists = {key: list(sorted(allele_count.items())) for key, allele_count in allele_counts.items()}
