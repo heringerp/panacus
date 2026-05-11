@@ -1,0 +1,32 @@
+pub struct Hist {
+    count_of_features: usize,
+    hist: Vec<usize>,
+}
+
+impl Hist {
+    /// Creates a histogram with a given maximum coverage.
+    pub fn from_maximum_coverage(maximum_coverage: usize) -> Self {
+        Self {
+            count_of_features: 0,
+            hist: vec![0; maximum_coverage + 1],
+        }
+    }
+
+    /// Inserts a single feature with a given coverage into the histogram.
+    /// Will panic if the coverage is bigger than the maximum coverage.
+    pub fn insert_feature_of_coverage(&mut self, coverage: usize) {
+        self.hist[coverage] += 1;
+        self.count_of_features += 1;
+    }
+
+    /// Gets the number of features that are currently inserted into
+    /// the histogram.
+    pub fn get_number_of_features(&self) -> usize {
+        self.count_of_features
+    }
+
+    /// Gets the maximum allowed coverage for this histogram.
+    pub fn get_maximum_coverage(&self) -> usize {
+        self.hist.len() - 1
+    }
+}

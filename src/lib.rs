@@ -2,7 +2,10 @@
 pub mod analyses;
 mod analysis_parameter;
 mod commands;
+pub mod coverage_matrix;
+pub mod file_formats;
 pub mod graph_broker;
+pub mod hist;
 mod html_report;
 mod io;
 mod util;

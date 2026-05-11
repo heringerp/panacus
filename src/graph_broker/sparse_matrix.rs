@@ -20,7 +20,7 @@ use super::{
 };
 
 #[derive(Debug, Clone)]
-pub struct CoverageMatrix {
+pub struct SparseMatrix {
     count: CountType,
     r: Vec<usize>,
     v: Option<Vec<CountSize>>,
@@ -29,7 +29,11 @@ pub struct CoverageMatrix {
     groups: Vec<String>,
 }
 
-impl CoverageMatrix {
+impl SparseMatrix {
+    pub fn new() -> Self {
+        unimplemented!()
+    }
+
     pub fn get_count(&self) -> CountType {
         self.count
     }
@@ -198,14 +202,14 @@ impl CoverageMatrix {
             path_order.push((path_id, (groups.len() - 1) as GroupSize));
         }
 
-        let r = CoverageMatrix::compute_row_storage_space(
+        let r = SparseMatrix::compute_row_storage_space(
             &item_table,
             &exclude_table,
             &path_order,
             graph_storage.number_of_items(&count),
         );
         let (v, c) =
-            CoverageMatrix::compute_column_values(&item_table, &path_order, &r, report_values);
+            SparseMatrix::compute_column_values(&item_table, &path_order, &r, report_values);
         log::info!(
             "abacus has {} path groups and {} countables",
             groups.len(),

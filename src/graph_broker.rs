@@ -25,13 +25,12 @@ use crate::{
 };
 
 mod abacus;
-mod coverage_matrix;
 mod graph;
 mod hist;
+mod sparse_matrix;
 mod util;
 
 pub use abacus::GraphMaskParameters;
-pub use coverage_matrix::CoverageMatrix;
 pub use graph::Edge;
 pub use graph::ItemId;
 pub use graph::Orientation;
@@ -39,6 +38,7 @@ pub use graph::PathSegment;
 pub use hist::Hist;
 pub use hist::Hist3D;
 pub use hist::ThresholdContainer;
+pub use sparse_matrix::SparseMatrix;
 
 #[derive(Debug, Clone, Default)]
 pub struct GraphState {
@@ -61,7 +61,7 @@ pub struct GraphBroker {
     graph_mask: Option<GraphMask>,
 
     total_abaci: Option<HashMap<CountType, AbacusByTotal>>,
-    group_abacus: Option<CoverageMatrix>,
+    group_abacus: Option<SparseMatrix>,
     hists: Option<HashMap<CountType, Hist>>,
     csc_abacus: bool,
     paths: HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
@@ -353,7 +353,7 @@ impl GraphBroker {
         self.hists.as_ref().unwrap()
     }
 
-    pub fn get_abacus_by_group(&self) -> &CoverageMatrix {
+    pub fn get_abacus_by_group(&self) -> &SparseMatrix {
         Self::check_and_error(self.group_abacus.as_ref(), "abacus_by_group");
         self.group_abacus.as_ref().unwrap()
     }
@@ -454,7 +454,7 @@ impl GraphBroker {
     fn set_abacus_by_group(&mut self, count: CountType) -> Result<(), Error> {
         // let mut abaci_by_group = HashMap::new();
         let mut data = bufreader_from_compressed_gfa(&self.gfa_file);
-        let abacus = CoverageMatrix::from_gfa(
+        let abacus = SparseMatrix::from_gfa(
             &mut data,
             self.graph_mask.as_ref().unwrap(),
             self.graph_aux.as_ref().unwrap(),

@@ -9,7 +9,7 @@ use quick_csv::Csv;
 use rayon::prelude::*;
 
 /* internal use */
-use crate::graph_broker::{CoverageMatrix, PathSegment, ThresholdContainer};
+use crate::graph_broker::{PathSegment, SparseMatrix, ThresholdContainer};
 use crate::util::*;
 
 pub fn bufreader_from_compressed_gfa(gfa_file: &str) -> BufReader<Box<dyn Read>> {
@@ -547,7 +547,7 @@ pub fn write_metadata_comments() -> anyhow::Result<String> {
 }
 
 pub fn write_ordered_histgrowth_table(
-    abacus_group: &CoverageMatrix,
+    abacus_group: &SparseMatrix,
     hist_aux: &ThresholdContainer,
     node_lens: &Vec<u32>,
 ) -> anyhow::Result<String> {
