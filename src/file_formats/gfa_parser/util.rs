@@ -11,7 +11,7 @@ use std::{
 use rayon::prelude::*;
 
 use crate::{
-    graph_broker::Edge,
+    file_formats::gfa_parser::Edge,
     util::{intersects, is_contained, ActiveTable, CountType, IntervalContainer, ItemTable, Wrap},
 };
 
@@ -162,7 +162,6 @@ pub fn parse_gfa_paths_walks<R: Read>(
                         exclude_coords,
                         start,
                     ),
-                    CountType::All => unreachable!("inadmissable count type"),
                 };
             }
             num_path += 1;

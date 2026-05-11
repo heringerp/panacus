@@ -13,7 +13,6 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use time::{macros::format_description, OffsetDateTime};
 
-use crate::graph_broker::GraphBroker;
 use crate::util::{get_default_plot_downloads, to_id};
 use shadow_rs::shadow;
 
@@ -132,11 +131,7 @@ impl AnalysisSection {
         Ok((registry.render("analysis_tab", &vars)?, js_objects))
     }
 
-    pub fn generate_custom_section(
-        gb: &GraphBroker,
-        name: String,
-        file: String,
-    ) -> anyhow::Result<Vec<Self>> {
+    pub fn generate_custom_section(name: String, file: String) -> anyhow::Result<Vec<Self>> {
         let id = name.to_lowercase().replace(&[' ', '|', '\\'], "-");
         let id = format!("custom-{id}");
         let mut table: Option<String> = None;
@@ -202,8 +197,8 @@ impl AnalysisSection {
         Ok(vec![AnalysisSection {
             id: id,
             analysis: "Custom".to_string(),
-            run_name: gb.get_run_name(),
-            run_id: gb.get_run_id(),
+            run_name: "My Custom Run".to_string(),
+            run_id: "MyCustomRun".to_string(),
             countable: name,
             table,
             items: vec![report_item],

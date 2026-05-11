@@ -1,14 +1,25 @@
 pub struct Hist {
     count_of_features: usize,
     hist: Vec<usize>,
+    feature_type: String,
+    run_id: String,
+    run_name: String,
 }
 
 impl Hist {
     /// Creates a histogram with a given maximum coverage.
-    pub fn from_maximum_coverage(maximum_coverage: usize) -> Self {
+    pub fn from_maximum_coverage(
+        maximum_coverage: usize,
+        feature_type: String,
+        run_id: String,
+        run_name: String,
+    ) -> Self {
         Self {
             count_of_features: 0,
             hist: vec![0; maximum_coverage + 1],
+            feature_type,
+            run_id,
+            run_name,
         }
     }
 
@@ -28,5 +39,21 @@ impl Hist {
     /// Gets the maximum allowed coverage for this histogram.
     pub fn get_maximum_coverage(&self) -> usize {
         self.hist.len() - 1
+    }
+
+    pub fn get_hist_values(&self) -> &Vec<usize> {
+        &self.hist
+    }
+
+    pub fn get_feature_type(&self) -> &str {
+        &self.feature_type
+    }
+
+    pub fn get_run_id(&self) -> &str {
+        &self.run_id
+    }
+
+    pub fn get_run_name(&self) -> &str {
+        &self.run_name
     }
 }

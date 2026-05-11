@@ -1,4 +1,4 @@
-use crate::{graph_broker::SparseMatrix, hist::Hist};
+use crate::{file_formats::gfa_parser::SparseMatrix, hist::Hist, util::ItemTable};
 
 pub struct CoverageMatrix {
     count_of_features: usize,
@@ -31,19 +31,27 @@ impl CoverageMatrix {
         &mut self,
         feature_length: usize,
         feature_position: usize,
-        feature: Vec<usize>,
+        feature: Vec<u32>,
     ) {
         self.count_of_features += 1;
         self.feature_lengths.push(feature_length);
         self.feature_positions.push(feature_position);
-        // TODO Insert feature itself
-        unimplemented!()
+        self.matrix.insert_row(feature);
     }
 
-    pub fn insert_path(&mut self, path_name: &str, path: Vec<usize>) {
-        self.path_names.push(path_name.to_owned());
-        // TODO Insert path itself
-        unimplemented!()
+    pub fn insert_item_table(
+        &mut self,
+        path_names: Vec<String>,
+        feature_lengths: Vec<usize>,
+        feature_positions: Vec<usize>,
+        item_table: ItemTable,
+    ) {
+        self.path_names = path_names;
+        self.count_of_features = feature_lengths.len();
+        self.feature_lengths = feature_lengths;
+        self.feature_positions = feature_positions;
+        self.matrix
+            .insert_item_table(self.count_of_features, item_table);
     }
 
     pub fn get_regional_iterator(&self, window_size: usize, window_step_size: usize) {

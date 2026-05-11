@@ -16,20 +16,28 @@ pub mod table;
 use std::collections::HashSet;
 
 use crate::{
-    analysis_parameter::AnalysisParameter,
-    graph_broker::{GraphBroker, PathSegment},
-    html_report::AnalysisSection,
+    analysis_parameter::AnalysisParameter, coverage_matrix::CoverageMatrix,
+    file_formats::gfa_parser::PathSegment, hist::Hist, html_report::AnalysisSection,
     util::CountType,
 };
 
-pub trait Analysis {
-    fn generate_table(&mut self, gb: Option<&GraphBroker>) -> anyhow::Result<String>;
+pub trait HistBasedAnalysis {
+    fn generate_table(&mut self, hist: &Hist) -> anyhow::Result<String>;
+    fn generate_report_section(&mut self, hist: &Hist) -> anyhow::Result<Vec<AnalysisSection>>;
+    fn get_type(&self) -> String;
+}
+
+pub trait MatrixBasedAnalysis {
+    fn generate_table(&mut self, hist: &CoverageMatrix) -> anyhow::Result<String>;
     fn generate_report_section(
         &mut self,
-        gb: Option<&GraphBroker>,
+        hist: &CoverageMatrix,
     ) -> anyhow::Result<Vec<AnalysisSection>>;
-    fn get_graph_requirements(&self) -> HashSet<InputRequirement>;
     fn get_type(&self) -> String;
+}
+
+pub trait Analysis {
+    fn get_graph_requirements(&self) -> HashSet<InputRequirement>;
 }
 
 pub trait ConstructibleAnalysis: Analysis {
@@ -54,11 +62,6 @@ impl InputRequirement {
             CountType::Bp => HashSet::from([InputRequirement::Bp]),
             CountType::Node => HashSet::from([InputRequirement::Node]),
             CountType::Edge => HashSet::from([InputRequirement::Edge]),
-            CountType::All => HashSet::from([
-                InputRequirement::Bp,
-                InputRequirement::Node,
-                InputRequirement::Edge,
-            ]),
         }
     }
 }

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /* external use */
 use strum_macros::{EnumIter, EnumString, EnumVariantNames};
 
-use crate::graph_broker::ItemId;
+use crate::file_formats::gfa_parser::ItemId;
 
 /* internal use */
 
@@ -45,7 +45,6 @@ pub enum CountType {
     Node,
     Bp,
     Edge,
-    All,
 }
 
 impl Default for CountType {
@@ -63,7 +62,6 @@ impl fmt::Display for CountType {
                 CountType::Node => "node",
                 CountType::Edge => "edge",
                 CountType::Bp => "bp",
-                CountType::All => "all",
             }
         )
     }
@@ -552,7 +550,7 @@ pub fn to_id(s: &str) -> String {
 mod tests {
 
     use super::*;
-    use crate::graph_broker::ItemId;
+    use crate::file_formats::gfa_parser::ItemId;
 
     #[test]
     fn test_interval_container() {

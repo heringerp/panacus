@@ -195,7 +195,7 @@ impl GraphStorage {
     pub fn from_gfa(gfa_file: &str, is_nice: bool, count_type: CountType) -> Self {
         let (node2id, path_segments, node_lens, _extremities) =
             Self::parse_nodes_gfa(gfa_file, None);
-        let index_edges: bool = (count_type == CountType::Edge) | (count_type == CountType::All);
+        let index_edges: bool = count_type == CountType::Edge;
         let (edge2id, edge_count, degree) = if index_edges {
             let (edge2id, edge_count, degree) = Self::parse_edge_gfa(gfa_file, &node2id);
             (Some(edge2id), edge_count, Some(degree))
@@ -269,7 +269,6 @@ impl GraphStorage {
         match c {
             &CountType::Node | &CountType::Bp => self.node_count,
             &CountType::Edge => self.edge_count,
-            &CountType::All => unreachable!("inadmissible count type"),
         }
     }
 

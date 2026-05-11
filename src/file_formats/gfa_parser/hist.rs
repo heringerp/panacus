@@ -43,7 +43,6 @@ impl Hist3D {
                     b,
                     graph_aux.expect("Graph auxiliary is needed for Bps hist"),
                 ),
-                CountType::All => unreachable!("inadmissable count type"),
             },
         }
     }
@@ -227,9 +226,6 @@ impl Hist {
                     indices,
                     uncovered_bps.expect("Uncovered Bps is needed for Bps hist"),
                 ),
-                CountType::All => unreachable!(
-                    "Inadmissable count type; all should not be used for calculating window hist"
-                ),
             },
         }
     }
@@ -241,7 +237,6 @@ impl Hist {
                 CountType::Node | CountType::Edge => abacus.construct_hist(),
                 CountType::Bp => abacus
                     .construct_hist_bps(graph_aux.expect("Graph auxiliary is needed for Bps hist")),
-                CountType::All => unreachable!("inadmissable count type"),
             },
         }
     }

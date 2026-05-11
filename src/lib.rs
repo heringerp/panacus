@@ -4,7 +4,6 @@ mod analysis_parameter;
 mod commands;
 pub mod coverage_matrix;
 pub mod file_formats;
-pub mod graph_broker;
 pub mod hist;
 mod html_report;
 mod io;
@@ -20,7 +19,6 @@ use analyses::Analysis;
 use analyses::ConstructibleAnalysis;
 use analysis_parameter::{AnalysisParameter, AnalysisRun, Task};
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use graph_broker::{GraphBroker, GraphState};
 use html_report::AnalysisSection;
 
 use std::fs::File;

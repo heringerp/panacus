@@ -269,7 +269,8 @@ impl GraphMask {
             let group_assignments = parse_groups(&mut data)?;
             let mut path_to_group = HashMap::default();
             for (i, (path, group)) in group_assignments.into_iter().enumerate() {
-                let path_nocoords = path.clear_coords();
+                let path: PathSegment = path;
+                let path_nocoords: PathSegment = path.clear_coords();
                 match path_to_group.get(&path_nocoords) {
                     Some(g) => {
                         if g != &group {

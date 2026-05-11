@@ -6,10 +6,9 @@ use std::str::{self, FromStr};
 /* external use */
 use flate2::read::MultiGzDecoder;
 use quick_csv::Csv;
-use rayon::prelude::*;
 
 /* internal use */
-use crate::graph_broker::{PathSegment, SparseMatrix, ThresholdContainer};
+use crate::file_formats::gfa_parser::{PathSegment, SparseMatrix, ThresholdContainer};
 use crate::util::*;
 
 pub fn bufreader_from_compressed_gfa(gfa_file: &str) -> BufReader<Box<dyn Read>> {
@@ -551,48 +550,49 @@ pub fn write_ordered_histgrowth_table(
     hist_aux: &ThresholdContainer,
     node_lens: &Vec<u32>,
 ) -> anyhow::Result<String> {
-    log::info!("reporting ordered-growth table");
-    let mut res = write_metadata_comments()?;
+    unimplemented!()
+    // log::info!("reporting ordered-growth table");
+    // let mut res = write_metadata_comments()?;
 
-    let mut output_columns: Vec<Vec<f64>> = hist_aux
-        .coverage
-        .par_iter()
-        .zip(&hist_aux.quorum)
-        .map(|(c, q)| {
-            log::info!(
-                "calculating ordered growth for coverage >= {} and quorum >= {}",
-                &c,
-                &q
-            );
-            abacus_group.calc_growth(c, q, node_lens)
-        })
-        .collect();
+    // let mut output_columns: Vec<Vec<f64>> = hist_aux
+    //     .coverage
+    //     .par_iter()
+    //     .zip(&hist_aux.quorum)
+    //     .map(|(c, q)| {
+    //         log::info!(
+    //             "calculating ordered growth for coverage >= {} and quorum >= {}",
+    //             &c,
+    //             &q
+    //         );
+    //         abacus_group.calc_growth(c, q, node_lens)
+    //     })
+    //     .collect();
 
-    // insert empty row for 0 element
-    for c in &mut output_columns {
-        c.insert(0, f64::NAN);
-    }
-    let m = hist_aux.coverage.len();
-    let mut header_cols = vec![vec![
-        "panacus".to_string(),
-        "count".to_string(),
-        "coverage".to_string(),
-        "quorum".to_string(),
-    ]];
-    header_cols.extend(
-        std::iter::repeat("ordered-growth")
-            .take(m)
-            .zip(std::iter::repeat(abacus_group.get_count()).take(m))
-            .zip(hist_aux.coverage.iter())
-            .zip(&hist_aux.quorum)
-            .map(|(((p, t), c), q)| {
-                vec![p.to_string(), t.to_string(), c.get_string(), q.get_string()]
-            })
-            .collect::<Vec<Vec<String>>>(),
-    );
-    let table = write_ordered_table(&header_cols, &output_columns, &abacus_group.get_groups())?;
-    res.push_str(&table);
-    Ok(res)
+    // // insert empty row for 0 element
+    // for c in &mut output_columns {
+    //     c.insert(0, f64::NAN);
+    // }
+    // let m = hist_aux.coverage.len();
+    // let mut header_cols = vec![vec![
+    //     "panacus".to_string(),
+    //     "count".to_string(),
+    //     "coverage".to_string(),
+    //     "quorum".to_string(),
+    // ]];
+    // header_cols.extend(
+    //     std::iter::repeat("ordered-growth")
+    //         .take(m)
+    //         .zip(std::iter::repeat(abacus_group.get_count()).take(m))
+    //         .zip(hist_aux.coverage.iter())
+    //         .zip(&hist_aux.quorum)
+    //         .map(|(((p, t), c), q)| {
+    //             vec![p.to_string(), t.to_string(), c.get_string(), q.get_string()]
+    //         })
+    //         .collect::<Vec<Vec<String>>>(),
+    // );
+    // let table = write_ordered_table(&header_cols, &output_columns, &abacus_group.get_groups())?;
+    // res.push_str(&table);
+    // Ok(res)
 }
 
 #[cfg(test)]
