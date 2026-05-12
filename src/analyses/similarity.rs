@@ -1,32 +1,28 @@
-use itertools::Itertools;
-use kodama::{linkage, Dendrogram};
+use kodama::Dendrogram;
 
-use crate::graph_broker::GraphBroker;
+use crate::analyses::MatrixBasedAnalysis;
+use crate::analysis_parameter::ClusterMethod;
+use crate::coverage_matrix::CoverageMatrix;
 use crate::util::get_default_plot_downloads;
 use crate::{
-    analyses::InputRequirement, analysis_parameter::AnalysisParameter, html_report::ReportItem,
-    io::write_metadata_comments, util::CountType,
+    analyses::InputRequirement, html_report::ReportItem, io::write_metadata_comments,
+    util::CountType,
 };
-use core::panic;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::usize;
 
-use super::{Analysis, AnalysisSection, ConstructibleAnalysis};
+use super::AnalysisSection;
 
 pub struct Similarity {
-    parameter: AnalysisParameter,
+    cluster_method: ClusterMethod,
     table: Option<Vec<Vec<f32>>>,
     labels: Option<Vec<String>>,
-    count: CountType,
 }
 
-impl Analysis for Similarity {
-    fn generate_table(
-        &mut self,
-        gb: Option<&crate::graph_broker::GraphBroker>,
-    ) -> anyhow::Result<String> {
+impl MatrixBasedAnalysis for Similarity {
+    fn generate_table(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<String> {
         if self.table.is_none() {
-            self.set_table(gb);
+            self.set_table(matrix);
         }
         let mut text = write_metadata_comments()?;
         let table = self.table.as_ref().unwrap();
@@ -39,32 +35,21 @@ impl Analysis for Similarity {
         "Similarity".to_string()
     }
 
-    fn get_graph_requirements(&self) -> HashSet<InputRequirement> {
-        let mut req = HashSet::from([InputRequirement::AbacusByGroup(self.count)]);
-        req.extend(Self::count_to_input_req(self.count));
-        req
-    }
-
     fn generate_report_section(
         &mut self,
-        gb: Option<&crate::graph_broker::GraphBroker>,
+        matrix: &CoverageMatrix,
     ) -> anyhow::Result<Vec<AnalysisSection>> {
         if self.table.is_none() {
-            self.set_table(gb);
+            self.set_table(matrix);
         }
-        if gb.is_none() {
-            panic!("Similarity analysis needs a graph")
-        }
-        let gb = gb.unwrap();
-        let k = match self.parameter {
-            AnalysisParameter::Similarity { count_type, .. } => count_type,
-            _ => panic!("Similarity analysis needs Similarity parameter"),
-        };
-        let table = self.generate_table(Some(gb))?;
+
+        let k = matrix.get_feature_type();
+        let table = self.generate_table(matrix)?;
         let table = format!("`{}`", &table);
         let id_prefix = format!(
             "sim-heat-{}",
-            self.get_run_id(gb)
+            matrix
+                .get_run_id()
                 .to_lowercase()
                 .replace(&[' ', '|', '\\'], "-")
         );
@@ -72,12 +57,12 @@ impl Analysis for Similarity {
             id: format!("{id_prefix}-{k}"),
             analysis: "Similarity Heatmap".to_string(),
             table: Some(table.clone()),
-            run_name: self.get_run_name(gb),
-            run_id: self.get_run_id(gb),
+            run_name: matrix.get_run_name().to_owned(),
+            run_id: matrix.get_run_id().to_owned(),
             countable: k.to_string(),
             items: vec![ReportItem::Heatmap {
                 id: format!("{id_prefix}-{k}"),
-                name: gb.get_fname(),
+                name: matrix.get_run_name().to_owned(),
                 x_labels: self.labels.as_ref().unwrap().clone(),
                 y_labels: self.labels.as_ref().unwrap().clone(),
                 values: self.table.as_ref().unwrap().clone(),
@@ -88,108 +73,25 @@ impl Analysis for Similarity {
     }
 }
 
-impl ConstructibleAnalysis for Similarity {
-    fn from_parameter(parameter: crate::analysis_parameter::AnalysisParameter) -> Self {
-        Self {
-            count: match &parameter {
-                AnalysisParameter::Similarity { count_type, .. } => *count_type,
-                _ => panic!("Similarity analysis needs similarity parameter"),
-            },
-            parameter,
-            table: None,
-            labels: None,
-        }
-    }
-}
-
 impl Similarity {
     fn count_to_input_req(count: CountType) -> HashSet<InputRequirement> {
         match count {
             CountType::Bp => HashSet::from([InputRequirement::Bp]),
             CountType::Node => HashSet::from([InputRequirement::Node]),
             CountType::Edge => HashSet::from([InputRequirement::Edge]),
-            CountType::All => HashSet::from([
-                InputRequirement::Bp,
-                InputRequirement::Node,
-                InputRequirement::Edge,
-            ]),
         }
     }
 
-    fn set_table(&mut self, gb: Option<&crate::graph_broker::GraphBroker>) {
-        let gb = gb.as_ref().unwrap();
-        let r = gb.get_abacus_by_group().get_r();
-        let c = gb.get_abacus_by_group().get_c();
-        let mut labels = gb.get_abacus_by_group().get_groups().clone();
-
-        let tuples: Vec<(_, _)> = r.iter().map(|x| *x as usize).tuple_windows().collect();
-
-        let mut path_similarities: HashMap<u128, usize> = HashMap::new();
-        let mut path_lens: HashMap<u64, usize> = HashMap::new();
-        let node_lens = gb.get_node_lens();
-        for (index, tuple) in tuples.iter().enumerate() {
-            let node_length = node_lens[index] as usize;
-            for x in &c[tuple.0..tuple.1] {
-                if self.count == CountType::Bp {
-                    *path_lens.entry(*x).or_insert(0) += node_length;
-                } else {
-                    *path_lens.entry(*x).or_insert(0) += 1;
-                }
-                for y in &c[tuple.0..tuple.1] {
-                    if self.count == CountType::Bp {
-                        *path_similarities
-                            .entry((*x as u128) << 64 | *y as u128)
-                            .or_insert(0) += node_length;
-                    } else {
-                        *path_similarities
-                            .entry((*x as u128) << 64 | *y as u128)
-                            .or_insert(0) += 1;
-                    }
-                }
-            }
+    pub fn new(cluster_method: ClusterMethod) -> Self {
+        Self {
+            cluster_method,
+            table: None,
+            labels: None,
         }
-
-        let group_count = gb.get_group_count();
-        let mut table: Vec<Vec<f32>> = vec![vec![0.0; group_count]; group_count];
-        for i in 0..group_count {
-            for j in 0..group_count {
-                let intersection = path_similarities
-                    .get(&((i as u128) << 64 | j as u128))
-                    .copied()
-                    .unwrap_or_default();
-                table[i][j] = intersection as f32
-                    / (path_lens[&(i as u64)] + path_lens[&(j as u64)] - intersection) as f32;
-            }
-        }
-
-        let mut distances = calculate_distances(&table);
-
-        let method = match self.parameter {
-            AnalysisParameter::Similarity { cluster_method, .. } => cluster_method,
-            _ => panic!("Similarity analysis needs to contain similarity parameter"),
-        }
-        .to_kodama();
-        let dend = linkage(&mut distances, table.len(), method);
-        let order = get_order_from_dendrogram(&dend);
-        let mut order = order.into_iter().enumerate().collect::<Vec<_>>();
-        order.sort_by_key(|el| el.1);
-        let order = order.into_iter().map(|el| el.0).collect::<Vec<_>>();
-        sort_by_indices(&mut table, &order);
-        for row in table.iter_mut() {
-            sort_by_indices(row, &order);
-        }
-        sort_by_indices(&mut labels, &order);
-
-        self.table = Some(table);
-        self.labels = Some(labels);
     }
 
-    fn get_run_name(&self, gb: &GraphBroker) -> String {
-        format!("{}", gb.get_run_name())
-    }
-
-    fn get_run_id(&self, gb: &GraphBroker) -> String {
-        format!("{}-similarity", gb.get_run_id())
+    fn set_table(&mut self, _matrix: &CoverageMatrix) {
+        unimplemented!()
     }
 }
 

@@ -3,7 +3,7 @@ use crate::{coverage_matrix::CoverageMatrix, hist::Hist};
 pub mod gfa_parser;
 
 pub trait FileFormatParser {
-    fn generate_hist(self) -> Hist;
-    fn generate_matrix(self) -> CoverageMatrix;
+    fn generate_hist(self: Box<Self>) -> Hist;
+    fn generate_matrix(self: Box<Self>) -> CoverageMatrix;
     fn get_file_info(&self);
 }

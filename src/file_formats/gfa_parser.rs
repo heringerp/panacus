@@ -56,7 +56,7 @@ pub struct GfaParser {
 }
 
 impl FileFormatParser for GfaParser {
-    fn generate_hist(self) -> Hist {
+    fn generate_hist(self: Box<Self>) -> Hist {
         let number_of_groups = self.graph_mask.count_groups();
         let mut hist = Hist::from_maximum_coverage(
             number_of_groups,
@@ -71,7 +71,7 @@ impl FileFormatParser for GfaParser {
         hist
     }
 
-    fn generate_matrix(self) -> CoverageMatrix {
+    fn generate_matrix(self: Box<Self>) -> CoverageMatrix {
         let (item_table, path_names, feature_lengths) = self
             .get_cleaned_item_table(
                 &self.graph_mask,
@@ -80,7 +80,11 @@ impl FileFormatParser for GfaParser {
                 &Vec::new(),
             )
             .expect("Can parse GFA file");
-        let mut matrix = CoverageMatrix::new();
+        let mut matrix = CoverageMatrix::new(
+            self.count_type.to_string(),
+            self.get_run_id(),
+            self.get_run_name(),
+        );
         let number_of_features = feature_lengths.len();
         matrix.insert_item_table(
             path_names,

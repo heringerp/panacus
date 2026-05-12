@@ -3,7 +3,7 @@ use std::io::BufReader;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
-use crate::analysis_parameter::AnalysisRun;
+use crate::analysis_parameter::FileRun;
 
 pub fn get_subcommand() -> Command {
     Command::new("report")
@@ -30,7 +30,7 @@ pub fn get_subcommand() -> Command {
         ])
 }
 
-pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, anyhow::Error>> {
+pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<FileRun>, anyhow::Error>> {
     if let Some(args) = args.subcommand_matches("report") {
         Some(parse_report_args(args))
     } else {
@@ -38,7 +38,7 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, an
     }
 }
 
-fn parse_report_args(args: &ArgMatches) -> Result<Vec<AnalysisRun>, anyhow::Error> {
+fn parse_report_args(args: &ArgMatches) -> Result<Vec<FileRun>, anyhow::Error> {
     if let Some(yaml_file) = args.get_one::<String>("yaml_file").cloned() {
         let f = File::open(yaml_file)?;
         let reader = BufReader::new(f);

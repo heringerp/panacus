@@ -1,7 +1,7 @@
 use crate::{clap_enum_variants, util::CountType};
 use clap::{arg, Arg, ArgMatches, Command};
 
-use crate::analysis_parameter::{AnalysisParameter, AnalysisRun, Grouping};
+use crate::analysis_parameter::{AnalysisParameter, FileRun, Grouping};
 
 pub fn get_subcommand() -> Command {
     Command::new("section-growth")
@@ -22,7 +22,7 @@ pub fn get_subcommand() -> Command {
         ])
 }
 
-pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, anyhow::Error>> {
+pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<FileRun>, anyhow::Error>> {
     if let Some(args) = args.subcommand_matches("section-growth") {
         let section_file = args
             .get_one::<String>("section_file")
@@ -54,20 +54,19 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, an
         } else {
             grouping.map(|g| Grouping::Custom(g))
         };
-        Some(Ok(vec![AnalysisRun::new(
+        Some(Ok(vec![FileRun::Gfa {
             graph,
-            None,
             subset,
             exclude,
             grouping,
-            false,
-            vec![AnalysisParameter::SectionGrowth {
+            nice: false,
+            count_type: count,
+            analyses: vec![AnalysisParameter::SectionGrowth {
                 sections: section_file,
-                count_type: count,
                 coverage,
                 quorum,
             }],
-        )]))
+        }]))
     } else {
         None
     }

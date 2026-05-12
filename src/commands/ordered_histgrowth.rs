@@ -2,7 +2,7 @@ use crate::clap_enum_variants_no_all;
 use clap::{arg, Arg, ArgMatches, Command};
 use strum::VariantNames;
 
-use crate::analysis_parameter::{AnalysisParameter, AnalysisRun, Grouping};
+use crate::analysis_parameter::{AnalysisParameter, FileRun, Grouping};
 use crate::util::CountType;
 
 pub fn get_subcommand() -> Command {
@@ -24,7 +24,7 @@ pub fn get_subcommand() -> Command {
         ])
 }
 
-pub fn get_instructions(args: &ArgMatches) -> Option<anyhow::Result<Vec<AnalysisRun>>> {
+pub fn get_instructions(args: &ArgMatches) -> Option<anyhow::Result<Vec<FileRun>>> {
     if let Some(args) = args.subcommand_matches("ordered-histgrowth") {
         let count = args
             .get_one::<CountType>("count")
@@ -53,20 +53,19 @@ pub fn get_instructions(args: &ArgMatches) -> Option<anyhow::Result<Vec<Analysis
         } else {
             grouping.map(|g| Grouping::Custom(g))
         };
-        let parameters = vec![AnalysisRun::new(
+        let parameters = vec![FileRun::Gfa {
             graph,
-            None,
             subset,
             exclude,
             grouping,
-            false,
-            vec![AnalysisParameter::OrderedGrowth {
+            count_type: count,
+            nice: false,
+            analyses: vec![AnalysisParameter::OrderedGrowth {
                 coverage,
                 quorum,
-                count_type: count,
                 order,
             }],
-        )];
+        }];
         log::info!("{parameters:?}");
         Some(Ok(parameters))
     } else {

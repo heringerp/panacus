@@ -1,7 +1,7 @@
 use crate::clap_enum_variants;
 use clap::{arg, Arg, ArgMatches, Command};
 
-use crate::analysis_parameter::{AnalysisParameter, AnalysisRun, Grouping};
+use crate::analysis_parameter::{AnalysisParameter, FileRun, Grouping};
 use crate::util::CountType;
 
 pub fn get_subcommand() -> Command {
@@ -18,7 +18,7 @@ pub fn get_subcommand() -> Command {
         ])
 }
 
-pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, anyhow::Error>> {
+pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<FileRun>, anyhow::Error>> {
     if let Some(args) = args.subcommand_matches("hist") {
         let count = args
             .get_one::<CountType>("count")
@@ -44,15 +44,15 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, an
         } else {
             grouping.map(|g| Grouping::Custom(g))
         };
-        Some(Ok(vec![AnalysisRun::new(
+        Some(Ok(vec![FileRun::Gfa {
             graph,
-            None,
             subset,
             exclude,
             grouping,
-            false,
-            vec![AnalysisParameter::Hist { count_type: count }],
-        )]))
+            nice: false,
+            count_type: count,
+            analyses: vec![AnalysisParameter::Hist {}],
+        }]))
     } else {
         None
     }

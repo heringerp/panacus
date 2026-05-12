@@ -1,66 +1,48 @@
 use crate::{
-    analyses::InputRequirement, analysis_parameter::AnalysisParameter, io::write_metadata_comments,
+    analyses::{InputRequirement, MatrixBasedAnalysis},
+    coverage_matrix::CoverageMatrix,
+    io::write_metadata_comments,
     util::CountType,
 };
-use core::panic;
-use std::{collections::HashSet, io::BufWriter};
+use std::collections::HashSet;
 
-use super::{Analysis, AnalysisSection, ConstructibleAnalysis};
+use super::AnalysisSection;
 
 pub struct Table {
-    parameter: AnalysisParameter,
+    total: bool,
+    order: Option<String>,
 }
 
-impl Analysis for Table {
-    fn generate_table(
-        &mut self,
-        gb: Option<&crate::graph_broker::GraphBroker>,
-    ) -> anyhow::Result<String> {
-        if let Some(gb) = gb {
-            let (total, by_group) = match self.parameter {
-                AnalysisParameter::Table {
-                    total, by_group, ..
-                } => (total, by_group),
-                _ => {
-                    panic!("Table analysis needs a table parameter")
-                }
-            };
-            let mut buf = BufWriter::new(Vec::new());
-            gb.write_abacus_by_group(total, by_group, &mut buf)?;
-            let bytes = buf.into_inner()?;
-            let mut string = write_metadata_comments()?;
-            string.push_str(&String::from_utf8(bytes)?);
-            Ok(string)
-        } else {
-            panic!("Table table generation should get Graph");
+impl MatrixBasedAnalysis for Table {
+    fn generate_table(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<String> {
+        let mut string = write_metadata_comments()?;
+        string.push_str("panacus\ttable\n");
+        string.push_str("feature");
+        for path_name in matrix.get_path_names() {
+            string.push_str("\t");
+            string.push_str(&path_name);
         }
+        string.push_str("\n");
+        for i in 0..matrix.get_feature_count() {
+            string.push_str(&i.to_string());
+            for value in matrix.get_counts_for_feature(i) {
+                string.push_str("\t");
+                string.push_str(&format!("{}", value));
+            }
+            string.push_str("\n");
+        }
+        Ok(string)
     }
 
     fn get_type(&self) -> String {
         "Table".to_string()
     }
 
-    fn get_graph_requirements(&self) -> HashSet<InputRequirement> {
-        if let AnalysisParameter::Table { count_type, .. } = &self.parameter {
-            let mut req = HashSet::from([InputRequirement::AbacusByGroup(*count_type)]);
-            req.extend(Self::count_to_input_req(*count_type));
-            req
-        } else {
-            HashSet::new()
-        }
-    }
-
     fn generate_report_section(
         &mut self,
-        _dm: Option<&crate::graph_broker::GraphBroker>,
+        _matrix: &CoverageMatrix,
     ) -> anyhow::Result<Vec<AnalysisSection>> {
         Ok(Vec::new())
-    }
-}
-
-impl ConstructibleAnalysis for Table {
-    fn from_parameter(parameter: crate::analysis_parameter::AnalysisParameter) -> Self {
-        Table { parameter }
     }
 }
 
@@ -70,11 +52,10 @@ impl Table {
             CountType::Bp => HashSet::from([InputRequirement::Bp]),
             CountType::Node => HashSet::from([InputRequirement::Node]),
             CountType::Edge => HashSet::from([InputRequirement::Edge]),
-            CountType::All => HashSet::from([
-                InputRequirement::Bp,
-                InputRequirement::Node,
-                InputRequirement::Edge,
-            ]),
         }
+    }
+
+    pub fn new(total: bool, order: Option<String>) -> Self {
+        Self { total, order }
     }
 }

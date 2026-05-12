@@ -546,9 +546,9 @@ pub fn write_metadata_comments() -> anyhow::Result<String> {
 }
 
 pub fn write_ordered_histgrowth_table(
-    abacus_group: &SparseMatrix,
-    hist_aux: &ThresholdContainer,
-    node_lens: &Vec<u32>,
+    _abacus_group: &SparseMatrix,
+    _hist_aux: &ThresholdContainer,
+    _node_lens: &Vec<u32>,
 ) -> anyhow::Result<String> {
     unimplemented!()
     // log::info!("reporting ordered-growth table");

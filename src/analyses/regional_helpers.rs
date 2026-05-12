@@ -4,7 +4,7 @@ use std::{
     usize,
 };
 
-use crate::graph_broker::{Edge, ItemId, Orientation, PathSegment};
+use crate::file_formats::gfa_parser::{Edge, ItemId, Orientation, PathSegment};
 
 pub fn get_close_nodes(
     ref_nodes: &Vec<(ItemId, Orientation)>,

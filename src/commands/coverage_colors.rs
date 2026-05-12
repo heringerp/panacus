@@ -1,6 +1,6 @@
 use clap::{arg, ArgMatches, Command};
 
-use crate::analysis_parameter::{AnalysisParameter, AnalysisRun, Grouping};
+use crate::analysis_parameter::{AnalysisParameter, FileRun, Grouping};
 
 pub fn get_subcommand() -> Command {
     Command::new("coverage-colors")
@@ -15,7 +15,7 @@ pub fn get_subcommand() -> Command {
         ])
 }
 
-pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, anyhow::Error>> {
+pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<FileRun>, anyhow::Error>> {
     if let Some(args) = args.subcommand_matches("coverage-colors") {
         let graph = args
             .get_one::<String>("gfa_file")
@@ -37,15 +37,15 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, an
         } else {
             grouping.map(|g| Grouping::Custom(g))
         };
-        let parameters = vec![AnalysisRun::new(
+        let parameters = vec![FileRun::Gfa {
             graph,
-            None,
             subset,
             exclude,
             grouping,
-            false,
-            vec![AnalysisParameter::CoverageColors],
-        )];
+            nice: false,
+            count_type: crate::util::CountType::Node,
+            analyses: vec![AnalysisParameter::CoverageColors],
+        }];
         log::info!("{parameters:?}");
         Some(Ok(parameters))
     } else {

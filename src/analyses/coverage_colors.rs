@@ -1,17 +1,16 @@
 use std::cmp;
-use std::collections::HashSet;
 use std::io::Write;
 use std::process::Command;
 
 use once_cell::sync::Lazy;
 use tempfile::NamedTempFile;
 
-use crate::analysis_parameter::AnalysisParameter;
-use crate::graph_broker::GraphBroker;
+use crate::analyses::MatrixBasedAnalysis;
+use crate::coverage_matrix::CoverageMatrix;
+use crate::html_report::ReportItem;
 use crate::util::CountType;
-use crate::{analyses::InputRequirement, html_report::ReportItem};
 
-use super::{Analysis, AnalysisSection, ConstructibleAnalysis};
+use super::AnalysisSection;
 
 static VIRIDIS: Lazy<Vec<(f64, (f64, f64, f64))>> = Lazy::new(|| {
     vec![
@@ -27,21 +26,12 @@ pub struct CoverageColors {
     inner: Option<InnerCoverageColors>,
 }
 
-impl ConstructibleAnalysis for CoverageColors {
-    fn from_parameter(_parameter: AnalysisParameter) -> Self {
-        Self { inner: None }
-    }
-}
-
-impl Analysis for CoverageColors {
+impl MatrixBasedAnalysis for CoverageColors {
     fn get_type(&self) -> String {
         "CoverageColors".to_string()
     }
-    fn generate_table(
-        &mut self,
-        gb: Option<&crate::graph_broker::GraphBroker>,
-    ) -> anyhow::Result<String> {
-        self.set_inner(gb)?;
+    fn generate_table(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<String> {
+        self.set_inner(matrix)?;
         let mut result = String::new();
         result.push_str("Name,Color\n");
         for (id, cov) in self
@@ -65,26 +55,23 @@ impl Analysis for CoverageColors {
 
     fn generate_report_section(
         &mut self,
-        dm: Option<&GraphBroker>,
+        matrix: &CoverageMatrix,
     ) -> anyhow::Result<Vec<AnalysisSection>> {
-        if dm.is_none() {
-            panic!("Coverage colors needs a graph");
-        }
-        self.set_inner(dm)?;
-        let dm = dm.unwrap();
-        let table = self.generate_table(Some(dm))?;
+        self.set_inner(matrix)?;
+        let table = self.generate_table(matrix)?;
         let table = format!("`{}`", &table);
         let id_prefix = format!(
             "coverage-colors-{}",
-            self.get_run_id(dm)
+            matrix
+                .get_run_id()
                 .to_lowercase()
                 .replace(&[' ', '|', '\\'], "-")
         );
-        let output_svg = self.get_image(dm);
+        let output_svg = self.get_image(matrix);
         let growth_tabs = vec![AnalysisSection {
             analysis: "Coverage Colors".to_string(),
-            run_name: self.get_run_name(dm),
-            run_id: self.get_run_id(dm),
+            run_name: matrix.get_run_name().to_owned(),
+            run_id: matrix.get_run_id().to_owned(),
             countable: CountType::Node.to_string(),
             table: Some(table),
             id: format!("{id_prefix}"),
@@ -102,61 +89,46 @@ impl Analysis for CoverageColors {
         }];
         Ok(growth_tabs)
     }
-
-    fn get_graph_requirements(&self) -> HashSet<InputRequirement> {
-        let mut req = HashSet::from([InputRequirement::AbacusByGroup(CountType::Node)]);
-        req.insert(InputRequirement::Node);
-        req
-    }
 }
 
 impl CoverageColors {
-    fn get_run_name(&self, gb: &GraphBroker) -> String {
-        format!("{}", gb.get_run_name())
+    fn new() -> Self {
+        Self { inner: None }
     }
 
-    fn get_run_id(&self, gb: &GraphBroker) -> String {
-        format!("{}-coveragecolors", gb.get_run_id())
-    }
-
-    fn set_inner(&mut self, gb: Option<&GraphBroker>) -> anyhow::Result<()> {
+    fn set_inner(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<()> {
         if self.inner.is_some() {
             return Ok(());
         }
 
-        if gb.is_none() {
-            panic!(
-                "CoverageColors
-             needs a graph in order to work"
-            );
-        }
-        let gb = gb.unwrap();
-        let coverages = gb.get_node_coverages();
-        let node_names = gb.get_node_names();
+        let coverages = matrix.get_feature_counts();
+        let node_names = matrix.get_feature_names();
 
         let coverages: Vec<(String, u64)> = coverages
             .into_iter()
-            .map(|(id, cov)| (str::from_utf8(&node_names[&id]).unwrap().to_owned(), cov))
+            .enumerate()
+            .map(|(id, cov)| (node_names[id].clone(), cov as u64))
             .collect();
-        let max_cov = gb.get_groups().len() as u64;
+        let max_cov = matrix.get_path_names().len() as u64;
 
         let coverages = InnerCoverageColors { coverages, max_cov };
         self.inner = Some(coverages);
         Ok(())
     }
 
-    fn get_image(&mut self, gb: &GraphBroker) -> anyhow::Result<String> {
+    fn get_image(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<String> {
         if self.inner.is_none() {
             panic!("get_image can only be called if coverage colors was already calculated");
         }
 
         let mut csv = NamedTempFile::with_suffix(".csv")?;
-        let table = self.generate_table(Some(gb))?;
+        let table = self.generate_table(matrix)?;
         write!(csv, "{}", table)?;
         let csv_path = csv.path().to_str().unwrap();
         let svg = NamedTempFile::with_suffix(".svg")?;
         let svg_path = svg.path().to_str().unwrap();
-        let graph_path = gb.get_fname();
+        // TODO get file name
+        let graph_path = matrix.get_run_name();
         Command::new("Bandage")
             .args(["image", &graph_path, svg_path, "--colors", csv_path])
             .output()?;

@@ -5,9 +5,6 @@ pub mod hist;
 pub mod info;
 pub mod node_distribution;
 pub mod ordered_histgrowth;
-pub mod regional_count;
-pub mod regional_degree;
-pub mod regional_growth;
 pub mod regional_helpers;
 pub mod section_growth;
 pub mod similarity;
@@ -16,9 +13,8 @@ pub mod table;
 use std::collections::HashSet;
 
 use crate::{
-    analysis_parameter::AnalysisParameter, coverage_matrix::CoverageMatrix,
-    file_formats::gfa_parser::PathSegment, hist::Hist, html_report::AnalysisSection,
-    util::CountType,
+    coverage_matrix::CoverageMatrix, file_formats::gfa_parser::PathSegment, hist::Hist,
+    html_report::AnalysisSection, util::CountType,
 };
 
 pub trait HistBasedAnalysis {
@@ -36,12 +32,9 @@ pub trait MatrixBasedAnalysis {
     fn get_type(&self) -> String;
 }
 
-pub trait Analysis {
-    fn get_graph_requirements(&self) -> HashSet<InputRequirement>;
-}
-
-pub trait ConstructibleAnalysis: Analysis {
-    fn from_parameter(parameter: AnalysisParameter) -> Self;
+pub enum Analysis {
+    HistBased(Box<dyn HistBasedAnalysis>),
+    MatrixBased(Box<dyn MatrixBasedAnalysis>),
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]

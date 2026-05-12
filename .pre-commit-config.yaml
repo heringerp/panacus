@@ -10,7 +10,7 @@ repos:
     rev: v1.1.0
     hooks:
     -   id: fmt
-    # -   id: check
+    -   id: check
     # -   id: test
 -   repo: local
     hooks:

@@ -2,7 +2,7 @@ use crate::clap_enum_variants_no_all;
 use clap::{arg, Arg, ArgMatches, Command};
 use strum::VariantNames;
 
-use crate::analysis_parameter::{AnalysisParameter, AnalysisRun, Grouping};
+use crate::analysis_parameter::{AnalysisParameter, FileRun, Grouping};
 use crate::util::CountType;
 
 pub fn get_subcommand() -> Command {
@@ -16,20 +16,18 @@ pub fn get_subcommand() -> Command {
             arg!(-H --"groupby-haplotype" "Merge counts from paths belonging to same haplotype"),
             arg!(-S --"groupby-sample" "Merge counts from paths belonging to same sample"),
             arg!(-a --"total" "Summarize by totaling presence/absence over all groups"),
-            arg!(-b --"by-group" "Return totals by group instead of by feature (requires --total/-a)"),
             arg!(-O --order <FILE> "The ordered histogram will be produced according to order of paths/groups in the supplied file (1-column list). If this option is not used, the order is determined by the rank of paths/groups in the subset list, and if that option is not used, the order is determined by the rank of paths/groups in the GFA file."),
             Arg::new("count").help("Graph quantity to be counted").default_value("node").ignore_case(true).short('c').long("count").value_parser(clap_enum_variants_no_all!(CountType)),
         ])
 }
 
-pub fn get_instructions(args: &ArgMatches) -> Option<anyhow::Result<Vec<AnalysisRun>>> {
+pub fn get_instructions(args: &ArgMatches) -> Option<anyhow::Result<Vec<FileRun>>> {
     if let Some(args) = args.subcommand_matches("table") {
         let count = args
             .get_one::<CountType>("count")
             .expect("hist subcommand has count type")
             .to_owned();
         let total = args.get_flag("total");
-        let by_group = args.get_flag("by-group");
         let order = args.get_one::<String>("order").cloned();
         let graph = args
             .get_one::<String>("gfa_file")
@@ -51,20 +49,15 @@ pub fn get_instructions(args: &ArgMatches) -> Option<anyhow::Result<Vec<Analysis
         } else {
             grouping.map(|g| Grouping::Custom(g))
         };
-        let parameters = vec![AnalysisRun::new(
+        let parameters = vec![FileRun::Gfa {
             graph,
-            None,
             subset,
             exclude,
             grouping,
-            false,
-            vec![AnalysisParameter::Table {
-                total,
-                by_group,
-                count_type: count,
-                order,
-            }],
-        )];
+            nice: false,
+            count_type: count,
+            analyses: vec![AnalysisParameter::Table { total, order }],
+        }];
         log::info!("{parameters:?}");
         Some(Ok(parameters))
     } else {

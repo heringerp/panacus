@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use crate::analysis_parameter::AnalysisParameter;
 use crate::html_report::ReportItem;
 use crate::{
     analyses::InputRequirement,
@@ -10,9 +9,7 @@ use crate::{
 
 use super::{AnalysisSection, HistBasedAnalysis};
 
-pub struct Hist {
-    parameter: AnalysisParameter,
-}
+pub struct Hist {}
 
 impl HistBasedAnalysis for Hist {
     fn get_type(&self) -> String {
@@ -85,5 +82,9 @@ impl Hist {
             CountType::Node => HashSet::from([InputRequirement::Node]),
             CountType::Edge => HashSet::from([InputRequirement::Edge]),
         }
+    }
+
+    pub fn new() -> Self {
+        Self {}
     }
 }

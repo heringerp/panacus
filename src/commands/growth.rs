@@ -1,13 +1,14 @@
 use clap::{arg, Arg, ArgMatches, Command};
 
 use crate::{
-    analysis_parameter::{AnalysisParameter, AnalysisRun, Grouping},
+    analysis_parameter::{AnalysisParameter, FileRun, Grouping},
     clap_enum_variants,
     util::CountType,
 };
 
 pub fn get_subcommand() -> Command {
     Command::new("growth")
+        .visible_alias("histgrowth")
         .about("Calculate growth curve from coverage histogram")
         .args(&[
             arg!(file: <FILE> "EITHER graph in GFA1 format, accepts also compressed (.gz) file OR a histogram as a .tsv"),
@@ -26,7 +27,7 @@ pub fn get_subcommand() -> Command {
         ])
 }
 
-pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, anyhow::Error>> {
+pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<FileRun>, anyhow::Error>> {
     if let Some(args) = args.subcommand_matches("growth") {
         // let hist = args.get_one::<String>("hist_file").expect("").to_owned();
         let coverage = args.get_one::<String>("coverage").cloned();
@@ -57,23 +58,20 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, an
         } else {
             grouping.map(|g| Grouping::Custom(g))
         };
-        Some(Ok(vec![AnalysisRun::new(
+        Some(Ok(vec![FileRun::Gfa {
             graph,
-            None,
             subset,
             exclude,
             grouping,
-            false,
-            vec![
-                AnalysisParameter::Hist { count_type: count },
-                AnalysisParameter::Growth {
-                    coverage,
-                    quorum,
-                    add_hist,
-                    add_alpha,
-                },
-            ],
-        )]))
+            nice: false,
+            count_type: count,
+            analyses: vec![AnalysisParameter::Growth {
+                coverage,
+                quorum,
+                add_hist,
+                add_alpha,
+            }],
+        }]))
     } else {
         None
     }
