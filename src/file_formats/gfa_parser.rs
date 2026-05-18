@@ -202,10 +202,10 @@ impl GfaParser {
         println!("EXCLUDE_TABLE: {:?}", exclude_table);
         println!("SUBSET_COVERED_BPS: {:?}", subset_covered_bps);
 
-        let path_names = graph_mask
+        let group_names = graph_mask
             .groups
             .iter()
-            .map(|x| x.0.to_string())
+            .map(|x| x.1.to_string())
             .collect_vec();
         let path_names = self
             .graph_storage
@@ -213,13 +213,15 @@ impl GfaParser {
             .iter()
             .map(|x| x.to_string())
             .collect();
-        log::info!("PATH NAMES: {:?}", path_names);
+        log::info!("PATH  NAMES: {:?}", path_names);
+        log::info!("GROUP NAMES: {:?}", group_names);
         let feature_lengths = match count {
             CountType::Node => vec![1; graph_storage.node_count],
             CountType::Edge => vec![1; graph_storage.edge_count],
             CountType::Bp => graph_storage
                 .node_lens
                 .iter()
+                .skip(1)
                 .map(|x| *x as usize)
                 .collect_vec(),
         };

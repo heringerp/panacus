@@ -69,9 +69,6 @@ impl CoverageMatrix {
     ) {
         self.path_names = path_names;
         self.feature_lengths = feature_lengths;
-        // Remove first element
-        self.feature_lengths.remove(0);
-
         self.count_of_features = self.feature_lengths.len();
         self.feature_positions = feature_positions;
         self.matrix

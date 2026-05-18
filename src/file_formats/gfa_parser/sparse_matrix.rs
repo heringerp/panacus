@@ -55,7 +55,6 @@ impl SparseMatrix {
     pub fn insert_item_table(&mut self, number_of_features: usize, item_table: ItemTable) {
         self.r = compute_row_storage_space(&item_table, number_of_features);
         (self.v, self.c) = compute_column_values(&item_table, &self.r, true);
-        log::info!("self.r: {} | {:?}", self.r.len(), self.r);
     }
 
     pub fn get_counts_for_feature(&self, id: usize, num_paths: usize) -> Vec<usize> {
