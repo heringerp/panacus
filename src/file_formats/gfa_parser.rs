@@ -201,20 +201,32 @@ impl GfaParser {
 
         println!("EXCLUDE_TABLE: {:?}", exclude_table);
         println!("SUBSET_COVERED_BPS: {:?}", subset_covered_bps);
+        println!("ITEM_TABLE ITEMS: {:?}", item_table.items);
+        println!("ITEM_TABLE ID_PREFSUM: {:?}", item_table.id_prefsum);
 
-        let group_names = graph_mask
-            .groups
-            .iter()
-            .map(|x| x.1.to_string())
-            .collect_vec();
-        let path_names = self
+        let path_names: Vec<String> = self
             .graph_storage
             .path_segments
             .iter()
             .map(|x| x.to_string())
             .collect();
+        let group_names = self
+            .graph_storage
+            .path_segments
+            .iter()
+            .map(|x| graph_mask.groups[x].clone())
+            .collect_vec();
         log::info!("PATH  NAMES: {:?}", path_names);
         log::info!("GROUP NAMES: {:?}", group_names);
+
+        let (item_table, groups) = if group_names == path_names {
+            (item_table, group_names)
+        } else {
+            Self::collapse_item_table(item_table, group_names)
+        };
+        println!("ITEM_TABLE ITEMS: {:?}", item_table.items);
+        println!("ITEM_TABLE ID_PREFSUM: {:?}", item_table.id_prefsum);
+        log::info!("GROUP NAMES: {:?}", groups);
         let feature_lengths = match count {
             CountType::Node => vec![1; graph_storage.node_count],
             CountType::Edge => vec![1; graph_storage.edge_count],
@@ -226,7 +238,37 @@ impl GfaParser {
                 .collect_vec(),
         };
 
-        Ok((item_table, path_names, feature_lengths))
+        Ok((item_table, groups, feature_lengths))
+    }
+
+    fn collapse_item_table(item_table: ItemTable, groups: Vec<String>) -> (ItemTable, Vec<String>) {
+        let mut items: HashMap<&str, Vec<ItemIdSize>> = HashMap::new();
+        for (idx, group) in groups.iter().enumerate() {
+            let (start, end) = (
+                item_table.id_prefsum[idx] as usize,
+                item_table.id_prefsum[idx + 1] as usize,
+            );
+            items
+                .entry(group)
+                .or_insert(Vec::new())
+                .extend(&item_table.items[start..end]);
+        }
+        let mut new_items = Vec::new();
+        let mut new_idprefsum = vec![0];
+        let mut keys = Vec::new();
+        for (key, mut value) in items.into_iter() {
+            let len = value.len();
+            new_items.append(&mut value);
+            new_idprefsum.push(new_idprefsum.last().unwrap() + len as u64);
+            keys.push(key.to_string());
+        }
+        (
+            ItemTable {
+                items: new_items,
+                id_prefsum: new_idprefsum,
+            },
+            keys,
+        )
     }
 
     fn parse_paths_walks(
