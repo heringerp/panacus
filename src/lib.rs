@@ -10,6 +10,7 @@ mod io;
 mod util;
 
 use env_logger::Builder;
+use itertools::Itertools;
 use log::LevelFilter;
 use std::io::Read;
 use std::{fmt::Debug, io::Write};
@@ -27,8 +28,10 @@ use shadow_rs::shadow;
 
 use crate::analyses::{HistBasedAnalysis, MatrixBasedAnalysis};
 use crate::analysis_parameter::{FileRun, Grouping};
+use crate::coverage_matrix::CoverageMatrix;
 use crate::file_formats::gfa_parser::{GfaParser, GraphMaskParameters};
 use crate::file_formats::FileFormatParser;
+use crate::hist::Hist;
 
 shadow!(build);
 
@@ -127,7 +130,7 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
     set_number_of_threads(&args);
 
     let mut instructions: Vec<FileRun> = Vec::new();
-    let mut _shall_write_html = false;
+    let mut shall_write_html = false;
     let mut dry_run = false;
     let mut _json = false;
     let mut config_content = "EMPTY".to_string();
@@ -159,7 +162,7 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
     }
 
     if let Some(report) = commands::report::get_instructions(&args) {
-        _shall_write_html = true;
+        shall_write_html = true;
         instructions.extend(report?);
         if let Some(report_matches) = args.subcommand_matches("report") {
             dry_run = report_matches.get_flag("dry_run");
@@ -209,7 +212,7 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
 
     // ride on!
     if !dry_run {
-        execute_pipeline(instructions, &mut out, &config_content)?;
+        execute_pipeline(instructions, &mut out, &config_content, shall_write_html)?;
     } else {
         println!("{:#?}", instructions);
     }
@@ -223,53 +226,110 @@ fn execute_pipeline<W: Write>(
     instructions: Vec<FileRun>,
     out: &mut std::io::BufWriter<W>,
     config_content: &str,
+    shall_write_html: bool,
 ) -> anyhow::Result<()> {
     for file in instructions {
         let (file_parser, analyses) = get_file_parser(file)?;
         let (hist_based, matrix_based) = split_analyses(analyses);
         if !matrix_based.is_empty() {
             let matrix = file_parser.generate_matrix();
-            let mut reports: Vec<AnalysisSection> = matrix_based
-                .into_iter()
-                // TODO remove all filter_maps and replace with correct error handling
-                .filter_map(|mut x| x.generate_report_section(&matrix).ok())
-                .flatten()
-                .collect();
-            let hist = matrix.get_hist();
-            let mut hist_reports: Vec<AnalysisSection> = hist_based
-                .into_iter()
-                .filter_map(|mut x| x.generate_report_section(&hist).ok())
-                .flatten()
-                .collect();
-            reports.append(&mut hist_reports);
-
-            let mut registry = handlebars::Handlebars::new();
-            let report = AnalysisSection::generate_report(
-                reports,
-                &mut registry,
-                "<Placeholder Filename>",
-                config_content,
-            )?;
+            let report = match shall_write_html {
+                true => get_matrix_reports(matrix, matrix_based, hist_based, config_content)?,
+                false => get_matrix_tables(matrix, matrix_based, hist_based)?,
+            };
             writeln!(out, "{report}")?;
         } else {
             let hist = file_parser.generate_hist();
-            let reports: Vec<AnalysisSection> = hist_based
-                .into_iter()
-                .filter_map(|mut x| x.generate_report_section(&hist).ok())
-                .flatten()
-                .collect();
-
-            let mut registry = handlebars::Handlebars::new();
-            let report = AnalysisSection::generate_report(
-                reports,
-                &mut registry,
-                "<Placeholder Filename>",
-                config_content,
-            )?;
+            let report = match shall_write_html {
+                true => get_hist_reports(hist, hist_based, config_content)?,
+                false => get_hist_tables(hist, hist_based)?,
+            };
             writeln!(out, "{report}")?;
         }
     }
     Ok(())
+}
+
+fn get_hist_reports(
+    hist: Hist,
+    hist_based: Vec<Box<dyn HistBasedAnalysis>>,
+    config_content: &str,
+) -> anyhow::Result<String> {
+    let reports: Vec<AnalysisSection> = hist_based
+        .into_iter()
+        .filter_map(|mut x| x.generate_report_section(&hist).ok())
+        .flatten()
+        .collect();
+    let mut registry = handlebars::Handlebars::new();
+    let report = AnalysisSection::generate_report(
+        reports,
+        &mut registry,
+        "<Placeholder Filename>",
+        config_content,
+    )?;
+    Ok(report)
+}
+
+fn get_hist_tables(
+    hist: Hist,
+    hist_based: Vec<Box<dyn HistBasedAnalysis>>,
+) -> anyhow::Result<String> {
+    let reports: Vec<String> = hist_based
+        .into_iter()
+        .filter_map(|mut x| x.generate_table(&hist).ok())
+        .collect();
+    let report = reports.into_iter().join("\n\n\n");
+    Ok(report)
+}
+
+fn get_matrix_tables(
+    matrix: CoverageMatrix,
+    matrix_based: Vec<Box<dyn MatrixBasedAnalysis>>,
+    hist_based: Vec<Box<dyn HistBasedAnalysis>>,
+) -> anyhow::Result<String> {
+    let mut reports: Vec<String> = matrix_based
+        .into_iter()
+        // TODO remove all filter_maps and replace with correct error handling
+        .filter_map(|mut x| x.generate_table(&matrix).ok())
+        .collect();
+    let hist = matrix.get_hist();
+    let mut hist_reports: Vec<String> = hist_based
+        .into_iter()
+        .filter_map(|mut x| x.generate_table(&hist).ok())
+        .collect();
+    reports.append(&mut hist_reports);
+    let report = reports.into_iter().join("\n\n\n");
+    Ok(report)
+}
+
+fn get_matrix_reports(
+    matrix: CoverageMatrix,
+    matrix_based: Vec<Box<dyn MatrixBasedAnalysis>>,
+    hist_based: Vec<Box<dyn HistBasedAnalysis>>,
+    config_content: &str,
+) -> anyhow::Result<String> {
+    let mut reports: Vec<AnalysisSection> = matrix_based
+        .into_iter()
+        // TODO remove all filter_maps and replace with correct error handling
+        .filter_map(|mut x| x.generate_report_section(&matrix).ok())
+        .flatten()
+        .collect();
+    let hist = matrix.get_hist();
+    let mut hist_reports: Vec<AnalysisSection> = hist_based
+        .into_iter()
+        .filter_map(|mut x| x.generate_report_section(&hist).ok())
+        .flatten()
+        .collect();
+    reports.append(&mut hist_reports);
+
+    let mut registry = handlebars::Handlebars::new();
+    let report = AnalysisSection::generate_report(
+        reports,
+        &mut registry,
+        "<Placeholder Filename>",
+        config_content,
+    )?;
+    Ok(report)
 }
 
 fn split_analyses(
@@ -316,7 +376,6 @@ fn get_file_parser(
                 groupby,
                 groupby_sample,
                 groupby_haplotype,
-                order: None,
             };
             Ok((
                 Box::new(GfaParser::new(

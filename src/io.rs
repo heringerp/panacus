@@ -497,8 +497,8 @@ pub fn write_ordered_table(
         res.push_str("\n");
     }
     let n = columns.first().unwrap_or(&Vec::new()).len();
-    for i in 1..n {
-        res.push_str(&format!("{}", index[i - 1]));
+    for i in 0..n {
+        res.push_str(&format!("{}", index[i]));
         for column in columns {
             res.push_str(&format!("\t{:0}", column[i].floor()));
         }

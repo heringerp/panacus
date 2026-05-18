@@ -24,7 +24,6 @@ pub struct GraphMaskParameters {
     pub groupby: String,
     pub groupby_sample: bool,
     pub groupby_haplotype: bool,
-    pub order: Option<String>,
 }
 
 impl GraphMaskParameters {
@@ -35,7 +34,6 @@ impl GraphMaskParameters {
             groupby: "".to_owned(),
             groupby_sample: false,
             groupby_haplotype: false,
-            order: None,
         }
     }
 }
@@ -45,7 +43,6 @@ pub struct GraphMask {
     pub groups: HashMap<PathSegment, String>,
     pub include_coords: Option<Vec<PathSegment>>,
     pub exclude_coords: Option<Vec<PathSegment>>,
-    pub order: Option<Vec<PathSegment>>,
 }
 
 impl GraphMask {
@@ -69,64 +66,6 @@ impl GraphMask {
             &groups,
         )?;
 
-        let order = if let Some(order) = &params.order {
-            let maybe_order = GraphMask::complement_with_group_assignments(
-                GraphMask::load_coord_list_file(order)?, // It does not make sense to
-                // specify order with a regex
-                &groups,
-            )?;
-            if let Some(o) = &maybe_order {
-                // if order is given, check that it comprises all included coords
-                let all_included_paths: Vec<PathSegment> = match &include_coords {
-                    None => {
-                        let exclude: HashSet<&PathSegment> = match &exclude_coords {
-                            Some(e) => e.iter().collect(),
-                            None => HashSet::new(),
-                        };
-                        graph_storage
-                            .path_segments
-                            .iter()
-                            .filter_map(|x| {
-                                if !exclude.contains(x) {
-                                    Some(x.clear_coords())
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect()
-                    }
-                    Some(include) => include.iter().map(|x| x.clear_coords()).collect(),
-                };
-                let order_set: HashSet<&PathSegment> = HashSet::from_iter(o.iter());
-
-                for p in all_included_paths.iter() {
-                    if !order_set.contains(p) {
-                        let msg =
-                            format!("order list does not contain information about path {}", p);
-                        log::error!("{}", &msg);
-                        // let's not be that harsh, shall we?
-                        // return Err(Error::new( ErrorKind::InvalidData, msg));
-                    }
-                }
-
-                // check that groups are not scrambled in include
-                let mut visited: HashSet<&str> = HashSet::new();
-                let mut cur: &str = groups.get(&o[0]).unwrap();
-                for p in o.iter() {
-                    let g: &str = groups.get(p).unwrap();
-                    if cur != g && !visited.insert(g) {
-                        let msg = format!("order of paths contains fragmented groups: path {} belongs to group that is interspersed by one or more other groups", p);
-                        log::error!("{}", &msg);
-                        return Err(Error::new(ErrorKind::InvalidData, msg));
-                    }
-                    cur = g;
-                }
-            }
-            maybe_order
-        } else {
-            None
-        };
-
         //let n_groups = HashSet::<&String>::from_iter(groups.values()).len();
         //if n_groups > 65534 {
         //    return Err(Error::new(
@@ -142,7 +81,6 @@ impl GraphMask {
             groups,
             include_coords,
             exclude_coords,
-            order,
         })
     }
 
@@ -322,9 +260,7 @@ impl GraphMask {
                 .push((i as ItemIdSize, group));
         }
 
-        let order: Vec<&PathSegment> = if let Some(order) = &self.order {
-            order.iter().collect()
-        } else if let Some(include) = &self.include_coords {
+        let order: Vec<&PathSegment> = if let Some(include) = &self.include_coords {
             include.iter().collect()
         } else {
             let exclude: HashSet<&PathSegment> = match &self.exclude_coords {
@@ -907,7 +843,6 @@ mod tests {
             groupby: String::new(),
             groupby_haplotype: false,
             groupby_sample: false,
-            order: None,
         };
         let calculated = GraphMaskParameters::default();
         assert_eq!(calculated, expected);

@@ -39,9 +39,37 @@ impl SparseMatrix {
         result
     }
 
+    pub fn get_feature_occurrence_count(&self, feature: usize) -> usize {
+        self.r[feature + 1] - self.r[feature]
+    }
+
+    pub fn contains(&self, feature: usize, path: GroupSize) -> bool {
+        for i in self.r[feature]..self.r[feature + 1] {
+            if self.c[i] == path {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn insert_item_table(&mut self, number_of_features: usize, item_table: ItemTable) {
         self.r = compute_row_storage_space(&item_table, number_of_features);
         (self.v, self.c) = compute_column_values(&item_table, &self.r, true);
+        log::info!("self.r: {} | {:?}", self.r.len(), self.r);
+    }
+
+    pub fn get_counts_for_feature(&self, id: usize, num_paths: usize) -> Vec<usize> {
+        let (start, end) = (self.r[id], self.r[id + 1]);
+        let mut res = vec![0; num_paths];
+        for i in start..end {
+            let idx = self.c[i] as usize;
+            let value = match &self.v {
+                Some(v) => v[i] as usize,
+                None => 1,
+            };
+            res[idx] = value;
+        }
+        res
     }
 
     pub fn insert_row(&mut self, row: Vec<u32>) {
@@ -80,7 +108,7 @@ fn compute_column_values(
         let start = item_table.id_prefsum[path_id] as usize;
         let end = item_table.id_prefsum[path_id + 1] as usize;
         for j in start..end {
-            let sid = item_table.items[j] as usize;
+            let sid = item_table.items[j] as usize - 1;
             let cv_start = r[sid];
             let mut cv_end = r[sid + 1];
             if cv_end != cv_start {
@@ -142,12 +170,12 @@ fn compute_row_storage_space(item_table: &ItemTable, n_items: usize) -> Vec<usiz
     log::info!("computing space allocating storage for group-based coverage table:");
     let mut last: Vec<GroupSize> = vec![GroupSize::MAX; n_items + 1];
 
-    let mut r: Vec<usize> = vec![0; n_items + 2];
+    let mut r: Vec<usize> = vec![0; n_items + 1];
     for path_id in 0..(item_table.id_prefsum.len() - 1) {
         let start = item_table.id_prefsum[path_id] as usize;
         let end = item_table.id_prefsum[path_id + 1] as usize;
         for j in start..end {
-            let sid = item_table.items[j] as usize;
+            let sid = item_table.items[j] as usize - 1;
             if last[sid] != path_id as GroupSize {
                 r[sid] += 1;
                 last[sid] = path_id as GroupSize;

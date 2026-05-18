@@ -1,11 +1,15 @@
-use std::collections::HashSet;
+use std::fs::File;
+use std::io::{self, BufRead};
+use std::path::Path;
 
-use crate::analyses::InputRequirement;
 use crate::analyses::MatrixBasedAnalysis;
 use crate::coverage_matrix::CoverageMatrix;
 use crate::file_formats::gfa_parser::ThresholdContainer;
 use crate::html_report::ReportItem;
-use crate::util::{get_default_plot_downloads, CountType};
+use crate::io::{write_metadata_comments, write_ordered_table};
+use crate::util::get_default_plot_downloads;
+use crate::util::Threshold;
+use rayon::prelude::*;
 
 use super::AnalysisSection;
 
@@ -14,6 +18,7 @@ type Growths = Vec<Vec<f64>>;
 pub struct OrderedHistgrowth {
     coverage: Option<String>,
     quorum: Option<String>,
+    path_order: Option<Vec<String>>,
     order: Option<String>,
     inner: Option<InnerOrderedGrowth>,
 }
@@ -22,8 +27,44 @@ impl MatrixBasedAnalysis for OrderedHistgrowth {
     fn get_type(&self) -> String {
         "OrderedHistgrowth".to_string()
     }
-    fn generate_table(&mut self, _matrix: &CoverageMatrix) -> anyhow::Result<String> {
-        unimplemented!()
+
+    fn generate_table(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<String> {
+        self.set_inner(matrix)?;
+
+        let mut res = write_metadata_comments()?;
+
+        let inner = self.inner.as_ref().unwrap();
+        log::info!("GROWTHS: {:?}", inner.growths);
+        // insert empty row for 0 element
+        let m = inner.hist_aux.coverage.len();
+        let mut header_cols = vec![vec![
+            "panacus".to_string(),
+            "count".to_string(),
+            "coverage".to_string(),
+            "quorum".to_string(),
+        ]];
+        header_cols.extend(
+            std::iter::repeat("ordered-growth")
+                .take(m)
+                .zip(std::iter::repeat(matrix.get_feature_type()).take(m))
+                .zip(inner.hist_aux.coverage.iter())
+                .zip(&inner.hist_aux.quorum)
+                .map(|(((p, t), c), q)| {
+                    vec![p.to_string(), t.to_string(), c.get_string(), q.get_string()]
+                })
+                .collect::<Vec<Vec<String>>>(),
+        );
+        let mut order = self.path_order.as_ref().unwrap().clone();
+
+        // Insert zero element
+        order.insert(0, "No_Path".to_string());
+        let mut growths = inner.growths.clone();
+        for growth in growths.iter_mut() {
+            growth.insert(0, 0.0);
+        }
+        let table = write_ordered_table(&header_cols, &growths, &order)?;
+        res.push_str(&table);
+        Ok(res)
     }
 
     fn generate_report_section(
@@ -79,28 +120,116 @@ impl MatrixBasedAnalysis for OrderedHistgrowth {
 }
 
 impl OrderedHistgrowth {
-    fn count_to_input_req(count: CountType) -> HashSet<InputRequirement> {
-        match count {
-            CountType::Bp => HashSet::from([InputRequirement::Bp]),
-            CountType::Node => HashSet::from([InputRequirement::Node]),
-            CountType::Edge => HashSet::from([InputRequirement::Edge]),
+    pub fn new(coverage: Option<String>, quorum: Option<String>, order: Option<String>) -> Self {
+        Self {
+            coverage,
+            quorum,
+            order,
+            path_order: None,
+            inner: None,
         }
     }
-
-    fn set_inner(&mut self, _matrix: &CoverageMatrix) -> anyhow::Result<()> {
+    fn set_inner(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<()> {
         if self.inner.is_some() {
             return Ok(());
         }
 
         let quorum = self.quorum.clone().unwrap_or("0".to_string());
         let coverage = self.coverage.clone().unwrap_or("1".to_string());
-        let _hist_aux = ThresholdContainer::parse_params(&quorum, &coverage)?;
+        let hist_aux = ThresholdContainer::parse_params(&quorum, &coverage)?;
+        let order = match &self.order {
+            Some(filename) => parse_list(&filename[..])?,
+            None => matrix.get_path_names().clone(),
+        };
 
-        unimplemented!();
+        let growths: Vec<Vec<f64>> = hist_aux
+            .coverage
+            .par_iter()
+            .zip(&hist_aux.quorum)
+            .map(|(c, q)| {
+                log::info!(
+                    "calculating ordered growth for coverage >= {} and quorum >= {}",
+                    &c,
+                    &q
+                );
+                calc_growth(matrix, c, q, &order)
+            })
+            .collect();
+        self.path_order = Some(order);
+        self.inner = Some(InnerOrderedGrowth { growths, hist_aux });
+        Ok(())
     }
 }
 
 struct InnerOrderedGrowth {
     growths: Growths,
     hist_aux: ThresholdContainer,
+}
+
+pub fn parse_list(filename: &str) -> anyhow::Result<Vec<String>> {
+    let lines = read_lines(filename)?.map_while(Result::ok).collect();
+    Ok(lines)
+}
+
+pub fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
+}
+
+pub fn calc_growth(
+    matrix: &CoverageMatrix,
+    t_coverage: &Threshold,
+    t_quorum: &Threshold,
+    order: &Vec<String>,
+) -> Vec<f64> {
+    let n_paths = matrix.get_path_names().len();
+    let mut res = vec![0.0; n_paths];
+
+    let c = usize::max(1, t_coverage.to_absolute(n_paths));
+    let q = f64::max(0.0, t_quorum.to_relative(n_paths));
+    let feature_lengths = matrix.get_feature_lengths();
+
+    log::info!(
+        "Calc growth: c={}, q={}, num_features={}, lens={:?}",
+        c,
+        q,
+        matrix.get_feature_count(),
+        feature_lengths
+    );
+
+    for i in 0..matrix.get_feature_count() {
+        // If this feature appears less often than the coverage
+        // skip it.
+        if matrix.get_count_of_feature(i) < c {
+            continue;
+        }
+
+        let entry_indices: Vec<usize> = matrix.get_appearances_for_order(i, order);
+        let mut entry_indices_index = 0;
+        log::info!("Looking at appearances of {}: {:?}", i, entry_indices);
+        for path_idx in entry_indices[0]..n_paths {
+            if entry_indices_index < entry_indices.len() - 1
+                && path_idx >= entry_indices[entry_indices_index + 1]
+            {
+                entry_indices_index += 1;
+            }
+            let num_seen_paths = path_idx + 1;
+            let num_appearances = entry_indices_index + 1;
+            let ratio = num_appearances as f64 / num_seen_paths as f64;
+            log::info!(
+                "path_idx: {}, eii: {} [{}], RATIO: {}",
+                path_idx,
+                entry_indices_index,
+                entry_indices[entry_indices_index],
+                ratio
+            );
+            if ratio >= q {
+                res[path_idx] += feature_lengths[i] as f64;
+            }
+        }
+    }
+    res
 }

@@ -65,8 +65,20 @@ impl FileFormatParser for GfaParser {
             self.get_run_name(),
         );
         let (abacus, _, _) = self.get_abacus_by_total();
-        for feature_coverage in abacus.countable {
-            hist.insert_feature_of_coverage(feature_coverage as usize);
+        log::info!("ABACUS COUNTABLE: {:?}", abacus.countable);
+        log::info!("ABACUS COUNT: {:?}", abacus.count);
+        log::info!("ABACUS UNCOVERED BPS: {:?}", abacus.uncovered_bps);
+        for (idx, feature_coverage) in abacus.countable.iter().enumerate().skip(1) {
+            if self.count_type == CountType::Bp {
+                let length = self.graph_storage.node_lens[idx];
+                log::info!("cov: {}, len: {}", feature_coverage, length);
+                hist.insert_feature_of_coverage_and_length(
+                    *feature_coverage as usize,
+                    length as usize,
+                );
+            } else {
+                hist.insert_feature_of_coverage(*feature_coverage as usize);
+            }
         }
         hist
     }
@@ -195,6 +207,13 @@ impl GfaParser {
             .iter()
             .map(|x| x.0.to_string())
             .collect_vec();
+        let path_names = self
+            .graph_storage
+            .path_segments
+            .iter()
+            .map(|x| x.to_string())
+            .collect();
+        log::info!("PATH NAMES: {:?}", path_names);
         let feature_lengths = match count {
             CountType::Node => vec![1; graph_storage.node_count],
             CountType::Edge => vec![1; graph_storage.edge_count],

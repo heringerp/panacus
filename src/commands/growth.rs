@@ -17,7 +17,7 @@ pub fn get_subcommand() -> Command {
             arg!(-g --groupby <FILE> "Merge counts from paths by path-group mapping from given tab-separated two-column file (ONLY IN GFA MODE)"),
             arg!(-H --"groupby-haplotype" "Merge counts from paths belonging to same haplotype (ONLY IN GFA MODE)"),
             arg!(-S --"groupby-sample" "Merge counts from paths belonging to same sample (ONLY IN GFA MODE)"),
-            arg!(-h --hist "Also include histogram in output (ONLY IN GFA MODE)"),
+            arg!(-i --hist "Also include histogram in output (ONLY IN GFA MODE)"),
             arg!(-a --alpha "Include alpha value as a comment in the output"),
             Arg::new("count").help("Graph quantity to be counted").default_value("node").ignore_case(true).short('c').long("count").value_parser(clap_enum_variants!(CountType)),
             Arg::new("coverage").help("Ignore all countables with a coverage lower than the specified threshold. The coverage of a countable corresponds to the number of path/walk that contain it. Repeated appearances of a countable in the same path/walk are counted as one. You can pass a comma-separated list of coverage thresholds, each one will produce a separated growth curve (e.g., --coverage 2,3). Use --quorum to set a threshold in conjunction with each coverage (e.g., --quorum 0.5,0.9)")

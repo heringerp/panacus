@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{file_formats::gfa_parser::SparseMatrix, hist::Hist, util::ItemTable};
 
 pub struct CoverageMatrix {
@@ -33,7 +35,17 @@ impl CoverageMatrix {
     /// If it isn't needed generate the hist directly from the
     /// file (using `FileFormatParser`'s `generate_hist()`).
     pub fn get_hist(&self) -> Hist {
-        unimplemented!()
+        let mut hist = Hist::from_maximum_coverage(
+            self.path_names.len(),
+            self.feature_type.clone(),
+            self.run_id.clone(),
+            self.run_name.clone(),
+        );
+        self.get_feature_counts()
+            .into_iter()
+            .zip(self.feature_lengths.iter())
+            .for_each(|(c, l)| hist.insert_feature_of_coverage_and_length(c, *l));
+        hist
     }
 
     pub fn insert_feature(
@@ -56,8 +68,11 @@ impl CoverageMatrix {
         item_table: ItemTable,
     ) {
         self.path_names = path_names;
-        self.count_of_features = feature_lengths.len();
         self.feature_lengths = feature_lengths;
+        // Remove first element
+        self.feature_lengths.remove(0);
+
+        self.count_of_features = self.feature_lengths.len();
         self.feature_positions = feature_positions;
         self.matrix
             .insert_item_table(self.count_of_features, item_table);
@@ -79,8 +94,33 @@ impl CoverageMatrix {
         unimplemented!()
     }
 
+    /// Creates an iterator over indices in the order (in order),
+    /// containing only the indices for which there exists an element
+    pub fn get_appearances_for_order(&self, feature: usize, order: &Vec<String>) -> Vec<usize> {
+        let translation_table: HashMap<&String, usize> = self
+            .path_names
+            .iter()
+            .enumerate()
+            .map(|(idx, path_name)| (path_name, idx))
+            .collect();
+        order
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, path_name)| {
+                let translated_idx = translation_table[path_name];
+                if self.matrix.contains(feature, translated_idx as u64) {
+                    Some(idx)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub fn get_feature_counts(&self) -> Vec<usize> {
-        unimplemented!()
+        (0..self.feature_lengths.len())
+            .map(|i| self.matrix.get_feature_occurrence_count(i))
+            .collect()
     }
 
     pub fn get_feature_names(&self) -> Vec<String> {
@@ -91,8 +131,13 @@ impl CoverageMatrix {
         &self.feature_lengths
     }
 
-    pub fn get_counts_for_feature(&self, _id: usize) -> Vec<usize> {
-        unimplemented!()
+    pub fn get_count_of_feature(&self, feature: usize) -> usize {
+        self.matrix.get_feature_occurrence_count(feature) as usize
+    }
+
+    pub fn get_counts_for_feature(&self, id: usize) -> Vec<usize> {
+        self.matrix
+            .get_counts_for_feature(id, self.path_names.len())
     }
 
     pub fn get_path_names(&self) -> &Vec<String> {

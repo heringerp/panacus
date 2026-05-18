@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::analyses::growth::Growth;
 use crate::analyses::hist::Hist;
+use crate::analyses::ordered_histgrowth::OrderedHistgrowth;
 use crate::analyses::table::Table;
 use crate::analyses::Analysis;
 use crate::util::CountType;
@@ -108,6 +109,11 @@ impl AnalysisParameter {
             Self::Table { total, order } => {
                 Analysis::MatrixBased(Box::new(Table::new(total, order)))
             }
+            Self::OrderedGrowth {
+                coverage,
+                quorum,
+                order,
+            } => Analysis::MatrixBased(Box::new(OrderedHistgrowth::new(coverage, quorum, order))),
             _ => unimplemented!(),
         }
     }

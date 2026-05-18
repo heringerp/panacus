@@ -23,11 +23,27 @@ impl Hist {
         }
     }
 
+    #[cfg(test)]
+    pub fn from_values(values: Vec<usize>) -> Self {
+        Self {
+            count_of_features: 0,
+            hist: values,
+            feature_type: "Test".to_string(),
+            run_id: "".to_string(),
+            run_name: "".to_string(),
+        }
+    }
+
     /// Inserts a single feature with a given coverage into the histogram.
     /// Will panic if the coverage is bigger than the maximum coverage.
     pub fn insert_feature_of_coverage(&mut self, coverage: usize) {
         self.hist[coverage] += 1;
         self.count_of_features += 1;
+    }
+
+    pub fn insert_feature_of_coverage_and_length(&mut self, coverage: usize, length: usize) {
+        self.hist[coverage] += length;
+        self.count_of_features += length;
     }
 
     /// Gets the number of features that are currently inserted into
