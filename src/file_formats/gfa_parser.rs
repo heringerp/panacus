@@ -84,7 +84,7 @@ impl FileFormatParser for GfaParser {
     }
 
     fn generate_matrix(self: Box<Self>) -> CoverageMatrix {
-        let (item_table, path_names, feature_lengths) = self
+        let (item_table, path_names, feature_lengths, feature_names) = self
             .get_cleaned_item_table(
                 &self.graph_mask,
                 &self.graph_storage,
@@ -102,6 +102,7 @@ impl FileFormatParser for GfaParser {
             path_names,
             feature_lengths,
             vec![0; number_of_features],
+            feature_names,
             item_table,
         );
         matrix
@@ -176,7 +177,7 @@ impl GfaParser {
         graph_storage: &GraphStorage,
         count: CountType,
         paths_to_collect: &Vec<PathSegment>,
-    ) -> anyhow::Result<(ItemTable, Vec<String>, Vec<usize>)> {
+    ) -> anyhow::Result<(ItemTable, Vec<String>, Vec<usize>, Vec<String>)> {
         log::info!("parsing path + walk sequences");
         let (item_table, exclude_table, subset_covered_bps, _paths_len, _collected_paths) =
             self.parse_paths_walks(&count, paths_to_collect);
@@ -236,17 +237,18 @@ impl GfaParser {
         println!("ITEM_TABLE ITEMS: {:?}", item_table.items);
         println!("ITEM_TABLE ID_PREFSUM: {:?}", item_table.id_prefsum);
         log::info!("GROUP NAMES: {:?}", groups);
-        let feature_lengths = Self::get_feature_lengths(graph_storage, &exclude_table, count);
-        log::info!("feature lengths: {:?}", feature_lengths);
+        let (feature_lengths, feature_names) =
+            Self::get_feature_lengths(graph_storage, &exclude_table, count);
+        log::info!("feature names: {:?}", feature_names);
 
-        Ok((item_table, groups, feature_lengths))
+        Ok((item_table, groups, feature_lengths, feature_names))
     }
 
     fn get_feature_lengths(
         graph_storage: &GraphStorage,
         exclude_table: &Option<ActiveTable>,
         count_type: CountType,
-    ) -> Vec<usize> {
+    ) -> (Vec<usize>, Vec<String>) {
         let mut feature_lengths = match count_type {
             CountType::Node => vec![1; graph_storage.node_count],
             CountType::Edge => vec![1; graph_storage.edge_count],
@@ -256,6 +258,32 @@ impl GfaParser {
                 .skip(1)
                 .map(|x| *x as usize)
                 .collect_vec(),
+        };
+        let mut feature_names = match count_type {
+            CountType::Node | CountType::Bp => {
+                let rev: HashMap<&ItemId, &str> = graph_storage
+                    .node2id
+                    .iter()
+                    .map(|(k, v)| (v, std::str::from_utf8(k).unwrap()))
+                    .collect();
+                let names: Vec<String> = (1..feature_lengths.len() + 1)
+                    .map(|x| rev[&ItemId(x as u64)].to_string())
+                    .collect();
+                names
+            }
+            CountType::Edge => {
+                let rev: HashMap<&ItemId, String> = graph_storage
+                    .edge2id
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .map(|(k, v)| (v, k.to_string()))
+                    .collect();
+                let names: Vec<String> = (1..feature_lengths.len() + 1)
+                    .map(|x| rev[&ItemId(x as u64)].to_string())
+                    .collect();
+                names
+            }
         };
 
         if let Some(e) = exclude_table.as_ref() {
@@ -272,9 +300,13 @@ impl GfaParser {
             // definition?
             let mut iter = e.items.iter().skip(1);
             feature_lengths.retain(|_| !iter.next().unwrap());
+
+            // Do the same for the feature names
+            let mut iter = e.items.iter().skip(1);
+            feature_names.retain(|_| !iter.next().unwrap());
         }
 
-        feature_lengths
+        (feature_lengths, feature_names)
     }
 
     fn collapse_item_table(

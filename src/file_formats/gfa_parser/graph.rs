@@ -166,7 +166,7 @@ pub fn get_extremities(node_dna: &[u8], k: usize) -> (u64, u64) {
 
 #[derive(Debug, Clone)]
 pub struct GraphStorage {
-    node2id: HashMap<Vec<u8>, ItemId>,
+    pub node2id: HashMap<Vec<u8>, ItemId>,
     is_nice: bool,
     pub node_lens: Vec<u32>,
     pub edge2id: Option<HashMap<Edge, ItemId>>,

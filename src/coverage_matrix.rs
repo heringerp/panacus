@@ -65,11 +65,13 @@ impl CoverageMatrix {
         path_names: Vec<String>,
         feature_lengths: Vec<usize>,
         feature_positions: Vec<usize>,
+        feature_names: Vec<String>,
         item_table: ItemTable,
     ) {
         self.path_names = path_names;
         self.feature_lengths = feature_lengths;
         self.count_of_features = self.feature_lengths.len();
+        self.feature_names = feature_names;
         self.feature_positions = feature_positions;
         self.matrix
             .insert_item_table(self.count_of_features, item_table);
@@ -89,6 +91,10 @@ impl CoverageMatrix {
         _paths: &Vec<usize>,
     ) -> Vec<usize> {
         unimplemented!()
+    }
+
+    pub fn get_feature_name(&self, feature: usize) -> &str {
+        &self.feature_names[feature]
     }
 
     /// Creates an iterator over indices in the order (in order),

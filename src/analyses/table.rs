@@ -17,14 +17,14 @@ impl MatrixBasedAnalysis for Table {
     fn generate_table(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<String> {
         let mut string = write_metadata_comments()?;
         string.push_str("panacus\ttable\n");
-        string.push_str("feature");
+        string.push_str(matrix.get_feature_type());
         for path_name in matrix.get_path_names() {
             string.push_str("\t");
             string.push_str(&path_name);
         }
         string.push_str("\n");
         for i in 0..matrix.get_feature_count() {
-            string.push_str(&i.to_string());
+            string.push_str(matrix.get_feature_name(i));
             for value in matrix.get_counts_for_feature(i) {
                 string.push_str("\t");
                 string.push_str(&format!("{}", value));
