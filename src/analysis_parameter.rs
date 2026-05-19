@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::analyses::growth::Growth;
 use crate::analyses::hist::Hist;
+use crate::analyses::node_distribution::NodeDistribution;
 use crate::analyses::ordered_histgrowth::OrderedHistgrowth;
 use crate::analyses::table::Table;
 use crate::analyses::Analysis;
@@ -114,6 +115,9 @@ impl AnalysisParameter {
                 quorum,
                 order,
             } => Analysis::MatrixBased(Box::new(OrderedHistgrowth::new(coverage, quorum, order))),
+            Self::NodeDistribution { radius, threshold } => {
+                Analysis::MatrixBased(Box::new(NodeDistribution::new(radius, threshold)))
+            }
             _ => unimplemented!(),
         }
     }

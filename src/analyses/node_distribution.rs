@@ -95,4 +95,13 @@ impl NodeDistribution {
         self.min = (*cov_min as u32, *lens_min);
         self.max = (*cov_max as u32, *lens_max);
     }
+
+    pub fn new(_radius: u32, threshold: usize) -> Self {
+        Self {
+            bins: Vec::new(),
+            min: (u32::MIN, f64::MIN),
+            max: (u32::MAX, f64::MAX),
+            threshold,
+        }
+    }
 }
