@@ -53,6 +53,11 @@ impl SparseMatrix {
     }
 
     pub fn insert_item_table(&mut self, number_of_features: usize, item_table: ItemTable) {
+        log::info!(
+            "Inserting item table with {} features, max feature: {}",
+            number_of_features,
+            item_table.items.iter().max().unwrap()
+        );
         self.r = compute_row_storage_space(&item_table, number_of_features);
         (self.v, self.c) = compute_column_values(&item_table, &self.r, true);
     }

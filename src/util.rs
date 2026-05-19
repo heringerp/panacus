@@ -192,6 +192,14 @@ impl ActiveTable {
     pub fn with_annotation(&self) -> bool {
         self.annotation.is_some()
     }
+
+    pub fn get_annotation_keys(&self) -> impl Iterator<Item = &ItemId> + '_ {
+        self.annotation
+            .as_ref()
+            .map(|x| x.keys())
+            .into_iter()
+            .flatten()
+    }
 }
 
 #[derive(Debug, Clone)]

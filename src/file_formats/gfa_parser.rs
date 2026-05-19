@@ -14,9 +14,9 @@ use crate::{
     util::{CountType, GroupSize, ItemIdSize},
 };
 
-use std::io::BufRead;
 use std::time::Instant;
 use std::{collections::HashMap, str};
+use std::{collections::HashSet, io::BufRead};
 
 use abacus::AbacusByTotal;
 use util::{
@@ -210,24 +210,44 @@ impl GfaParser {
             .iter()
             .map(|x| x.to_string())
             .collect();
-        let group_names = self
+        let group_names: Vec<String> = self
             .graph_storage
             .path_segments
             .iter()
             .map(|x| graph_mask.groups[x].clone())
             .collect_vec();
+        let mgroup_names: HashSet<&str> = graph_mask
+            .get_path_order(&self.graph_storage.path_segments)
+            .into_iter()
+            .map(|x| x.1)
+            .collect();
         log::info!("PATH  NAMES: {:?}", path_names);
         log::info!("GROUP NAMES: {:?}", group_names);
+        log::info!("MASK NAMES: {:?}", mgroup_names);
 
-        let (item_table, groups) = if group_names == path_names {
+        let (item_table, groups) = if group_names == path_names
+            && group_names.len() == mgroup_names.len()
+            && exclude_table.is_none()
+        {
             (item_table, group_names)
         } else {
-            Self::collapse_item_table(item_table, group_names)
+            Self::collapse_item_table(item_table, group_names, mgroup_names, &exclude_table)
         };
         println!("ITEM_TABLE ITEMS: {:?}", item_table.items);
         println!("ITEM_TABLE ID_PREFSUM: {:?}", item_table.id_prefsum);
         log::info!("GROUP NAMES: {:?}", groups);
-        let feature_lengths = match count {
+        let feature_lengths = Self::get_feature_lengths(graph_storage, &exclude_table, count);
+        log::info!("feature lengths: {:?}", feature_lengths);
+
+        Ok((item_table, groups, feature_lengths))
+    }
+
+    fn get_feature_lengths(
+        graph_storage: &GraphStorage,
+        exclude_table: &Option<ActiveTable>,
+        count_type: CountType,
+    ) -> Vec<usize> {
+        let mut feature_lengths = match count_type {
             CountType::Node => vec![1; graph_storage.node_count],
             CountType::Edge => vec![1; graph_storage.edge_count],
             CountType::Bp => graph_storage
@@ -238,11 +258,43 @@ impl GfaParser {
                 .collect_vec(),
         };
 
-        Ok((item_table, groups, feature_lengths))
+        if let Some(e) = exclude_table.as_ref() {
+            // Shorten length
+            for annotated_feature in e.get_annotation_keys() {
+                let idx = annotated_feature.0 as usize - 1;
+                for (start, end) in e.get_active_intervals(annotated_feature, 0) {
+                    let len = end - start;
+                    feature_lengths[idx] -= len;
+                }
+            }
+            // Iterator over excluded features (this has a zero element)
+            // TODO can we just remove the zero element in the exclude_table
+            // definition?
+            let mut iter = e.items.iter().skip(1);
+            feature_lengths.retain(|_| !iter.next().unwrap());
+        }
+
+        feature_lengths
     }
 
-    fn collapse_item_table(item_table: ItemTable, groups: Vec<String>) -> (ItemTable, Vec<String>) {
+    fn collapse_item_table(
+        item_table: ItemTable,
+        groups: Vec<String>,
+        masked_groups: HashSet<&str>,
+        exclude_table: &Option<ActiveTable>,
+    ) -> (ItemTable, Vec<String>) {
         let mut items: HashMap<&str, Vec<ItemIdSize>> = HashMap::new();
+        // Translation table to compress id space (in case features are excluded)
+        let translation_of_ids: Option<HashMap<usize, usize>> = exclude_table.as_ref().map(|e| {
+            e.items
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, active)| if *active { None } else { Some(idx) })
+                .enumerate()
+                .map(|(new_idx, old_idx)| (old_idx, new_idx))
+                .collect()
+        });
+        log::info!("Translation table: {:?}", translation_of_ids);
         for (idx, group) in groups.iter().enumerate() {
             let (start, end) = (
                 item_table.id_prefsum[idx] as usize,
@@ -257,6 +309,19 @@ impl GfaParser {
         let mut new_idprefsum = vec![0];
         let mut keys = Vec::new();
         for (key, mut value) in items.into_iter() {
+            // If path is excluded, skip it
+            if !masked_groups.contains(key) {
+                continue;
+            }
+            if let Some(e) = exclude_table.as_ref() {
+                // If the feature should be removed, remove it
+                value.retain(|x| !e.is_active(&ItemId(*x)));
+                // Compress the id space (excluded features should take no index)
+                value.iter_mut().for_each(|x| {
+                    let new_idx = translation_of_ids.as_ref().unwrap()[&(*x as usize)];
+                    *x = new_idx as u64;
+                });
+            }
             let len = value.len();
             new_items.append(&mut value);
             new_idprefsum.push(new_idprefsum.last().unwrap() + len as u64);
