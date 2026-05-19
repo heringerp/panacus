@@ -1,26 +1,29 @@
-use std::collections::HashSet;
-
 use crate::{
-    analyses::HistBasedAnalysis,
+    analyses::MatrixBasedAnalysis,
+    coverage_matrix::CoverageMatrix,
     hist::Hist,
     html_report::{AnalysisSection, ReportItem},
     io::write_table_with_start_index,
-    util::{get_default_plot_downloads, CountType},
+    util::get_default_plot_downloads,
 };
 
-use super::InputRequirement;
+pub struct CoverageLine {
+    reference: Option<String>,
+    hist: Option<Hist>,
+}
 
-pub struct CoverageLine {}
-
-impl HistBasedAnalysis for CoverageLine {
+impl MatrixBasedAnalysis for CoverageLine {
     fn get_type(&self) -> String {
         "CoverageLine".to_string()
     }
 
-    fn generate_table(&mut self, hist: &Hist) -> anyhow::Result<String> {
+    fn generate_table(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<String> {
         log::info!("reporting coverage line table");
         let mut res = String::new();
         res.push_str(&crate::io::write_metadata_comments()?);
+        if self.hist.is_none() {
+            self.set_inner(matrix);
+        }
 
         let mut header_cols = vec![vec![
             "panacus".to_string(),
@@ -30,7 +33,10 @@ impl HistBasedAnalysis for CoverageLine {
         ]];
         let mut output_columns = Vec::new();
         output_columns.push(
-            hist.get_hist_values()
+            self.hist
+                .as_ref()
+                .unwrap()
+                .get_hist_values()
                 .iter()
                 .map(|x| *x as f64)
                 .skip(1)
@@ -38,7 +44,7 @@ impl HistBasedAnalysis for CoverageLine {
         );
         header_cols.push(vec![
             "hist".to_string(),
-            hist.get_feature_type().to_string(),
+            matrix.get_feature_type().to_string(),
             String::new(),
             String::new(),
         ]);
@@ -52,17 +58,21 @@ impl HistBasedAnalysis for CoverageLine {
 
     fn generate_report_section(
         &mut self,
-        hist: &Hist,
+        matrix: &CoverageMatrix,
     ) -> anyhow::Result<Vec<crate::html_report::AnalysisSection>> {
-        let table = self.generate_table(hist)?;
+        let table = self.generate_table(matrix)?;
         let table = format!("`{}`", &table);
         let id_prefix = format!(
             "coverage-line-{}",
-            hist.get_run_id()
+            matrix
+                .get_run_id()
                 .to_lowercase()
                 .replace(&[' ', '|', '\\'], "-")
         );
-        let mut values: Vec<_> = hist.get_hist_values().clone();
+        if self.hist.is_none() {
+            self.set_inner(matrix);
+        }
+        let mut values = self.hist.as_ref().unwrap().get_hist_values().clone();
         while let Some(last) = values.pop() {
             if last != 0 {
                 values.push(0);
@@ -70,17 +80,17 @@ impl HistBasedAnalysis for CoverageLine {
             }
         }
         let values: Vec<f32> = values.into_iter().skip(1).map(|c| c as f32).collect();
-        let k = hist.get_feature_type();
+        let k = matrix.get_feature_type();
         let coverage_line_tabs = AnalysisSection {
             id: format!("{id_prefix}-{k}"),
             analysis: "Coverage Line".to_string(),
             table: Some(table.clone()),
-            run_name: hist.get_run_name().to_owned(),
-            run_id: hist.get_run_id().to_owned(),
+            run_name: matrix.get_run_name().to_owned(),
+            run_id: matrix.get_run_id().to_owned(),
             countable: k.to_string(),
             items: vec![ReportItem::Line {
                 id: format!("{id_prefix}-{k}"),
-                name: hist.get_run_name().to_owned(),
+                name: matrix.get_run_name().to_owned(),
                 x_label: "Allele count".to_string(),
                 y_label: format!("#{}s", k),
                 x_values: (1..=values.len()).map(|s| s as f32).collect(),
@@ -95,15 +105,18 @@ impl HistBasedAnalysis for CoverageLine {
 }
 
 impl CoverageLine {
-    fn count_to_input_req(count: CountType) -> HashSet<InputRequirement> {
-        match count {
-            CountType::Bp => HashSet::from([InputRequirement::Bp]),
-            CountType::Node => HashSet::from([InputRequirement::Node]),
-            CountType::Edge => HashSet::from([InputRequirement::Edge]),
+    pub fn new(reference: Option<String>) -> Self {
+        Self {
+            reference,
+            hist: None,
         }
     }
 
-    pub fn new() -> Self {
-        Self {}
+    fn set_inner(&mut self, matrix: &CoverageMatrix) {
+        if let Some(r) = self.reference.as_ref() {
+            self.hist = Some(matrix.get_hist_for_reference(r));
+        } else {
+            self.hist = Some(matrix.get_hist());
+        }
     }
 }

@@ -48,6 +48,33 @@ impl CoverageMatrix {
         hist
     }
 
+    pub fn get_hist_for_reference(&self, reference: &str) -> Hist {
+        let mut hist = Hist::from_maximum_coverage(
+            self.path_names.len() - 1,
+            self.feature_type.clone(),
+            self.run_id.clone(),
+            self.run_name.clone(),
+        );
+        let r_idx = self
+            .path_names
+            .iter()
+            .enumerate()
+            .filter_map(|(i, p)| if p == reference { Some(i) } else { None })
+            .next()
+            .expect("Reference is part of paths");
+        self.get_feature_counts()
+            .into_iter()
+            .enumerate()
+            .zip(self.feature_lengths.iter())
+            .for_each(|((i, c), l)| {
+                // Insert the feature only if it is not part of the reference
+                if !self.matrix.contains(i, r_idx as u64) {
+                    hist.insert_feature_of_coverage_and_length(c, *l)
+                }
+            });
+        hist
+    }
+
     pub fn insert_feature(
         &mut self,
         feature_length: usize,

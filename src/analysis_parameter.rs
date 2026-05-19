@@ -6,6 +6,7 @@ use strum_macros::{EnumIter, EnumString, EnumVariantNames};
 use serde::{Deserialize, Serialize};
 
 use crate::analyses::coverage_colors::CoverageColors;
+use crate::analyses::coverage_line::CoverageLine;
 use crate::analyses::growth::Growth;
 use crate::analyses::hist::Hist;
 use crate::analyses::node_distribution::NodeDistribution;
@@ -57,7 +58,7 @@ pub enum AnalysisParameter {
         order: Option<String>,
     },
     CoverageLine {
-        reference: String,
+        reference: Option<String>,
     },
     Similarity {
         #[serde(default)]
@@ -120,6 +121,9 @@ impl AnalysisParameter {
                 Analysis::MatrixBased(Box::new(NodeDistribution::new(radius, threshold)))
             }
             Self::CoverageColors {} => Analysis::MatrixBased(Box::new(CoverageColors::new())),
+            Self::CoverageLine { reference } => {
+                Analysis::MatrixBased(Box::new(CoverageLine::new(reference)))
+            }
             _ => unimplemented!(),
         }
     }
