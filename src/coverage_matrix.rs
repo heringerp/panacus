@@ -143,6 +143,26 @@ impl CoverageMatrix {
             .get_counts_for_feature(id, self.path_names.len())
     }
 
+    pub fn get_counts_for_feature_in_order(&self, id: usize, order: &Vec<String>) -> Vec<usize> {
+        let translation_table: HashMap<&String, usize> = self
+            .path_names
+            .iter()
+            .enumerate()
+            .map(|(idx, path_name)| (path_name, idx))
+            .collect();
+        order
+            .iter()
+            .map(|path_name| {
+                let translated_idx = translation_table[path_name];
+                if self.matrix.contains(id, translated_idx as u64) {
+                    1
+                } else {
+                    0
+                }
+            })
+            .collect()
+    }
+
     pub fn get_path_names(&self) -> &Vec<String> {
         &self.path_names
     }
