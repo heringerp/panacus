@@ -92,7 +92,7 @@ impl MatrixBasedAnalysis for CoverageColors {
 }
 
 impl CoverageColors {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self { inner: None }
     }
 

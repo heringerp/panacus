@@ -5,6 +5,7 @@ use strum_macros::{EnumIter, EnumString, EnumVariantNames};
 
 use serde::{Deserialize, Serialize};
 
+use crate::analyses::coverage_colors::CoverageColors;
 use crate::analyses::growth::Growth;
 use crate::analyses::hist::Hist;
 use crate::analyses::node_distribution::NodeDistribution;
@@ -118,6 +119,7 @@ impl AnalysisParameter {
             Self::NodeDistribution { radius, threshold } => {
                 Analysis::MatrixBased(Box::new(NodeDistribution::new(radius, threshold)))
             }
+            Self::CoverageColors {} => Analysis::MatrixBased(Box::new(CoverageColors::new())),
             _ => unimplemented!(),
         }
     }
