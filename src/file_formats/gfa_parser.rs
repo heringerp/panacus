@@ -2,6 +2,7 @@ use anyhow::Error;
 use itertools::Itertools;
 
 use crate::{
+    analyses::info::FileInfo,
     coverage_matrix::CoverageMatrix,
     file_formats::{
         gfa_parser::{
@@ -11,7 +12,9 @@ use crate::{
         FileFormatParser,
     },
     hist::Hist,
-    util::{CountType, GroupSize, ItemIdSize},
+    util::{
+        averageu32, median_already_sorted, n50_already_sorted, CountType, GroupSize, ItemIdSize,
+    },
 };
 
 use std::time::Instant;
@@ -84,7 +87,7 @@ impl FileFormatParser for GfaParser {
     }
 
     fn generate_matrix(self: Box<Self>) -> CoverageMatrix {
-        let (item_table, path_names, feature_lengths, feature_names) = self
+        let (item_table, path_names, feature_lengths, feature_names, path_lengths) = self
             .get_cleaned_item_table(
                 &self.graph_mask,
                 &self.graph_storage,
@@ -92,10 +95,12 @@ impl FileFormatParser for GfaParser {
                 &Vec::new(),
             )
             .expect("Can parse GFA file");
+        let file_info = self.get_file_info_value(path_lengths);
         let mut matrix = CoverageMatrix::new(
             self.count_type.to_string(),
             self.get_run_id(),
             self.get_run_name(),
+            file_info,
         );
         let number_of_features = feature_lengths.len();
         matrix.insert_item_table(
@@ -131,6 +136,144 @@ impl GfaParser {
             graph_storage,
             graph_mask,
         })
+    }
+
+    fn get_file_info_value(&self, paths_len: HashMap<PathSegment, (u32, u32)>) -> FileInfo {
+        // Created here to satisfy the borrow checker
+        let empty_degree = vec![0, 0];
+        let degree = self.graph_storage.degree.as_ref().unwrap_or(&empty_degree);
+        let mut node_lens_sorted = self.graph_storage.node_lens[1..].to_vec();
+        node_lens_sorted.sort_by(|a, b| b.cmp(a)); // decreasing, for N50
+        let mut components = connected_components(
+            self.graph_storage
+                .edge2id
+                .as_ref()
+                .unwrap_or(&HashMap::new()),
+            &self.graph_storage.get_nodes(),
+        );
+        components.sort();
+
+        let paths_bp_len: Vec<_> = paths_len.values().map(|x| x.1).collect();
+        let paths_len: Vec<_> = paths_len.values().map(|x| x.0).collect();
+
+        // group_count: gb.get_group_count(),
+        let mut file_info = FileInfo::new("gfa");
+        file_info.add_info(
+            "Number of nodes",
+            self.graph_storage.node_count.to_string().as_str(),
+        );
+        file_info.add_info(
+            "Number of edges",
+            self.graph_storage.edge_count.to_string().as_str(),
+        );
+        file_info.add_info(
+            "Average degree",
+            averageu32(&degree[1..]).to_string().as_str(),
+        );
+        file_info.add_info(
+            "Max degree",
+            degree[1..].iter().max().unwrap().to_string().as_str(),
+        );
+        file_info.add_info(
+            "Min degree",
+            degree[1..].iter().min().unwrap().to_string().as_str(),
+        );
+        file_info.add_info(
+            "Number of zero-degree nodes",
+            degree[1..]
+                .iter()
+                .filter(|&x| *x == 0)
+                .count()
+                .to_string()
+                .as_str(),
+        );
+        file_info.add_info(
+            "Number of connected components",
+            (components.len() as u32).to_string().as_str(),
+        );
+        file_info.add_info(
+            "Largest component size",
+            (*components.iter().max().unwrap_or(&0))
+                .to_string()
+                .as_str(),
+        );
+        file_info.add_info(
+            "Smallest component size",
+            (*components.iter().min().unwrap_or(&0))
+                .to_string()
+                .as_str(),
+        );
+        file_info.add_info(
+            "Median component size",
+            (median_already_sorted(&components)).to_string().as_str(),
+        );
+        file_info.add_info(
+            "Longest node",
+            (*node_lens_sorted.iter().max().unwrap())
+                .to_string()
+                .as_str(),
+        );
+        file_info.add_info(
+            "Shortest node",
+            (*node_lens_sorted.iter().min().unwrap())
+                .to_string()
+                .as_str(),
+        );
+        file_info.add_info(
+            "Average node size",
+            (averageu32(&node_lens_sorted)).to_string().as_str(),
+        );
+        file_info.add_info(
+            "Median node size",
+            (median_already_sorted(&node_lens_sorted))
+                .to_string()
+                .as_str(),
+        );
+        file_info.add_info(
+            "N50 nodes",
+            (n50_already_sorted(&node_lens_sorted).unwrap())
+                .to_string()
+                .as_str(),
+        );
+        file_info.add_info(
+            "Number of basepairs",
+            (node_lens_sorted.iter().sum::<u32>()).to_string().as_str(),
+        );
+        file_info.add_info(
+            "Number of groups",
+            (self.graph_mask.count_groups()).to_string().as_str(),
+        );
+        file_info.add_info(
+            "Number of paths",
+            (self.graph_storage.path_segments.len())
+                .to_string()
+                .as_str(),
+        );
+        file_info.add_info(
+            "Longest path in nodes",
+            (*paths_len.iter().max().unwrap()).to_string().as_str(),
+        );
+        file_info.add_info(
+            "Shortest path in nodes",
+            (*paths_len.iter().min().unwrap()).to_string().as_str(),
+        );
+        file_info.add_info(
+            "Average path length in nodes",
+            (averageu32(&paths_len)).to_string().as_str(),
+        );
+        file_info.add_info(
+            "Longest path in bps",
+            (*paths_bp_len.iter().max().unwrap()).to_string().as_str(),
+        );
+        file_info.add_info(
+            "Shortest path in bps",
+            (*paths_bp_len.iter().min().unwrap()).to_string().as_str(),
+        );
+        file_info.add_info(
+            "Average path length in bps",
+            (averageu32(&paths_bp_len)).to_string().as_str(),
+        );
+        file_info
     }
 
     fn get_run_name(&self) -> String {
@@ -177,9 +320,15 @@ impl GfaParser {
         graph_storage: &GraphStorage,
         count: CountType,
         paths_to_collect: &Vec<PathSegment>,
-    ) -> anyhow::Result<(ItemTable, Vec<String>, Vec<usize>, Vec<String>)> {
+    ) -> anyhow::Result<(
+        ItemTable,
+        Vec<String>,
+        Vec<usize>,
+        Vec<String>,
+        HashMap<PathSegment, (u32, u32)>,
+    )> {
         log::info!("parsing path + walk sequences");
-        let (item_table, exclude_table, subset_covered_bps, _paths_len, _collected_paths) =
+        let (item_table, exclude_table, subset_covered_bps, paths_len, _collected_paths) =
             self.parse_paths_walks(&count, paths_to_collect);
 
         let mut path_order: Vec<(ItemIdSize, GroupSize)> = Vec::new();
@@ -241,7 +390,13 @@ impl GfaParser {
             Self::get_feature_lengths(graph_storage, &exclude_table, count);
         log::info!("feature names: {:?}", feature_names);
 
-        Ok((item_table, groups, feature_lengths, feature_names))
+        Ok((
+            item_table,
+            groups,
+            feature_lengths,
+            feature_names,
+            paths_len,
+        ))
     }
 
     fn get_feature_lengths(
@@ -580,4 +735,45 @@ fn skip_path(item_table: &mut ItemTable, num_path: &mut usize, buf: &mut Vec<u8>
     item_table.id_prefsum[*num_path + 1] += item_table.id_prefsum[*num_path];
     *num_path += 1;
     buf.clear();
+}
+
+fn connected_components(edge2id: &HashMap<Edge, ItemId>, nodes: &Vec<ItemId>) -> Vec<u32> {
+    let mut component_lengths = Vec::new();
+    let mut visited: HashSet<ItemId> = HashSet::new();
+    let edges: HashMap<ItemId, Vec<ItemId>> = edge2id
+        .keys()
+        .map(|x| (x.0, x.2))
+        .chain(edge2id.keys().map(|x| (x.2, x.0)))
+        .fold(HashMap::new(), |mut acc, (k, v)| {
+            acc.entry(k).and_modify(|x| x.push(v)).or_insert(vec![v]);
+            acc
+        });
+    for node in nodes {
+        if !visited.contains(node) {
+            component_lengths.push(dfs(&edges, *node, &mut visited));
+        }
+    }
+    component_lengths
+}
+
+fn dfs(edges: &HashMap<ItemId, Vec<ItemId>>, node: ItemId, visited: &mut HashSet<ItemId>) -> u32 {
+    let mut s = Vec::new();
+    let mut length = 0;
+    s.push(node);
+    while let Some(v) = s.pop() {
+        if visited.contains(&v) {
+            continue;
+        }
+        visited.insert(v);
+        length += 1;
+        if !edges.contains_key(&v) {
+            continue;
+        }
+        for neigh in &edges[&v] {
+            if !visited.contains(neigh) {
+                s.push(*neigh);
+            }
+        }
+    }
+    length
 }

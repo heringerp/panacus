@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{file_formats::gfa_parser::SparseMatrix, hist::Hist, util::ItemTable};
+use crate::{
+    analyses::info::FileInfo, file_formats::gfa_parser::SparseMatrix, hist::Hist, util::ItemTable,
+};
 
 pub struct CoverageMatrix {
     count_of_features: usize,
@@ -12,11 +14,17 @@ pub struct CoverageMatrix {
     feature_type: String,
     run_id: String,
     run_name: String,
+    file_info: FileInfo,
 }
 
 impl CoverageMatrix {
     // TODO: Add FILE info object
-    pub fn new(feature_type: String, run_id: String, run_name: String) -> Self {
+    pub fn new(
+        feature_type: String,
+        run_id: String,
+        run_name: String,
+        file_info: FileInfo,
+    ) -> Self {
         Self {
             count_of_features: 0,
             feature_lengths: Vec::new(),
@@ -27,6 +35,7 @@ impl CoverageMatrix {
             feature_type,
             run_id,
             run_name,
+            file_info,
         }
     }
 
@@ -210,7 +219,7 @@ impl CoverageMatrix {
         &self.run_name
     }
 
-    pub fn get_file_info(&self) -> &str {
-        unimplemented!()
+    pub fn get_file_info(&self) -> &FileInfo {
+        &self.file_info
     }
 }
