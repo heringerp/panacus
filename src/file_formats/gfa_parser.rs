@@ -381,8 +381,9 @@ impl GfaParser {
         println!("ITEM_TABLE ID_PREFSUM: {:?}", item_table.id_prefsum);
         log::info!("GROUP NAMES: {:?}", groups);
         let (feature_lengths, feature_names) =
-            Self::get_feature_lengths(graph_storage, &exclude_table, count);
+            Self::get_feature_lengths(graph_storage, &exclude_table, &subset_covered_bps, count);
         log::info!("feature names: {:?}", feature_names);
+        log::info!("feature lengths: {:?}", feature_lengths);
 
         Ok((
             item_table,
@@ -396,6 +397,7 @@ impl GfaParser {
     fn get_feature_lengths(
         graph_storage: &GraphStorage,
         exclude_table: &Option<ActiveTable>,
+        subset_covered_bps: &Option<IntervalContainer>,
         count_type: CountType,
     ) -> (Vec<usize>, Vec<String>) {
         let mut feature_lengths = match count_type {
@@ -453,6 +455,23 @@ impl GfaParser {
             // Do the same for the feature names
             let mut iter = e.items.iter().skip(1);
             feature_names.retain(|_| !iter.next().unwrap());
+        }
+
+        if let Some(s) = subset_covered_bps.as_ref() {
+            if count_type == CountType::Bp {
+                for key in s.keys() {
+                    let feature_idx = key.0 as usize - 1;
+                    let subset_length: usize = s
+                        .get(key)
+                        .unwrap()
+                        .iter()
+                        .map(|(start, end)| end - start)
+                        .sum();
+                    if subset_length < feature_lengths[feature_idx] {
+                        feature_lengths[feature_idx] = subset_length;
+                    }
+                }
+            }
         }
 
         (feature_lengths, feature_names)
@@ -540,6 +559,8 @@ impl GfaParser {
 
         let mut collected_paths: HashMap<PathSegment, Vec<(ItemId, Orientation)>> = HashMap::new();
 
+        let mut fully_included = vec![false; graph_storage.node_count + 1];
+
         let mut num_path = 0;
         let complete: Vec<(usize, usize)> = vec![(0, usize::MAX)];
         let mut paths_len: HashMap<PathSegment, (u32, u32)> = HashMap::new();
@@ -617,6 +638,7 @@ impl GfaParser {
                             let (node_len, bp_len) = update_tables(
                                 &mut item_table,
                                 &mut subset_covered_bps.as_mut(),
+                                &mut fully_included,
                                 &mut exclude_table.as_mut(),
                                 num_path,
                                 graph_storage,

@@ -40,6 +40,9 @@ pub fn parse_gfa_paths_walks<R: Read>(
     let complete: Vec<(usize, usize)> = vec![(0, usize::MAX)];
     let mut paths_len: HashMap<PathSegment, (u32, u32)> = HashMap::new();
 
+    // Used to check whether a node was already fully included in a previous path
+    let mut fully_included = vec![false; graph_storage.node_count + 1];
+
     let mut buf = vec![];
     let timer = Instant::now();
     while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
@@ -142,6 +145,7 @@ pub fn parse_gfa_paths_walks<R: Read>(
                         let (node_len, bp_len) = update_tables(
                             &mut item_table,
                             &mut subset_covered_bps.as_mut(),
+                            &mut fully_included,
                             &mut exclude_table.as_mut(),
                             num_path,
                             graph_storage,
@@ -224,6 +228,7 @@ pub fn parse_path_identifier(data: &[u8]) -> (PathSegment, &[u8]) {
 pub fn update_tables(
     item_table: &mut ItemTable,
     subset_covered_bps: &mut Option<&mut IntervalContainer>,
+    fully_included: &mut Vec<bool>,
     exclude_table: &mut Option<&mut ActiveTable>,
     num_path: usize,
     graph_storage: &GraphStorage,
@@ -302,13 +307,23 @@ pub fn update_tables(
                 item_table.items.push(sid.0);
                 item_table.id_prefsum[num_path + 1] += 1;
                 if let Some(int) = subset_covered_bps.as_mut() {
+                    log::info!(
+                        "Thinking about whether to include {:?}, {}, {} -> l: {}",
+                        sid,
+                        a,
+                        b,
+                        l
+                    );
                     // if fully covered, we do not need to store anything in the map
                     if b - a == l {
                         if int.contains(sid) {
                             int.remove(sid);
                         }
+                        fully_included[sid.0 as usize] = true;
                     } else {
-                        int.add(*sid, a, b);
+                        if !fully_included[sid.0 as usize] {
+                            int.add(*sid, a, b);
+                        }
                     }
                 }
                 included += 1;
@@ -715,6 +730,147 @@ pub fn parse_path_seq_update_tables(
 
     log::debug!("..done");
     (num_nodes_path as u32, bp_len)
+}
+
+#[cfg(test)]
+fn get_walk_segment_id_with_orientation(
+    node: &[u8],
+    graph_storage: &GraphStorage,
+) -> (ItemId, Orientation) {
+    let segment_id = graph_storage
+        .get_node_id(&node[1..node.len()])
+        .unwrap_or_else(|| panic!("unknown node {}", str::from_utf8(node).unwrap()));
+    // TODO: Is orientation really necessary?
+    let orientation = node[0];
+    assert!(
+        orientation == b'<' || orientation == b'>',
+        "unknown orientation of segment {}",
+        str::from_utf8(node).unwrap()
+    );
+    //plus_strands[rayon::current_thread_index().unwrap()] += (orientation == b'+') as u32;
+    (segment_id, Orientation::from_lg(orientation))
+}
+
+#[cfg(test)]
+fn get_walk_segment_ids_with_orientation(
+    data: &[u8],
+    graph_storage: &GraphStorage,
+    end: usize,
+    chunk_size: usize,
+) -> (Vec<(ItemId, Orientation)>, u32) {
+    let (segment_ids, bp_lens): (Vec<_>, Vec<_>) = (0..end)
+        .step_by(chunk_size)
+        .map(|chunk_start| {
+            let chunk_end = *[end, chunk_start + chunk_size].iter().min().unwrap();
+            let mut bp_len: u32 = 0;
+
+            let mut curr_pos = match chunk_start {
+                0 => 0,
+                x => {
+                    memchr2(b'<', b'>', &data[chunk_start..chunk_end]).unwrap_or(chunk_size + 3) + x
+                }
+            };
+
+            let mut segment_ids = Vec::new();
+
+            while curr_pos - chunk_start < chunk_size {
+                let segment_end = match memchr2(b'<', b'>', &data[curr_pos + 1..]) {
+                    None => end,
+                    Some(idx) => curr_pos + 1 + idx,
+                };
+                let segment_end = if segment_end < end { segment_end } else { end };
+                if curr_pos >= segment_end {
+                    break;
+                }
+                let segment_id = get_walk_segment_id_with_orientation(
+                    &data[curr_pos..segment_end],
+                    graph_storage,
+                );
+                bp_len += graph_storage.node_len(&segment_id.0);
+                segment_ids.push(segment_id);
+                // move curr_pos forward (after next comma)
+                curr_pos = segment_end;
+            }
+            (segment_ids, bp_len)
+        })
+        .unzip();
+
+    let segment_ids = segment_ids.into_iter().concat();
+    let bp_len = bp_lens.into_iter().sum();
+    (segment_ids, bp_len)
+}
+
+#[cfg(test)]
+fn get_segment_id_with_orientation(
+    node: &[u8],
+    graph_storage: &GraphStorage,
+) -> (ItemId, Orientation) {
+    let segment_id = graph_storage
+        .get_node_id(&node[0..node.len() - 1])
+        .unwrap_or_else(|| panic!("unknown node {}", str::from_utf8(node).unwrap()));
+    // TODO: Is orientation really necessary?
+    let orientation = node[node.len() - 1];
+    assert!(
+        orientation == b'-' || orientation == b'+',
+        "unknown orientation of segment {}",
+        str::from_utf8(node).unwrap()
+    );
+    let orientation = Orientation::from_pm(orientation);
+    //plus_strands[rayon::current_thread_index().unwrap()] += (orientation == b'+') as u32;
+    (segment_id, orientation)
+}
+
+#[cfg(test)]
+fn get_path_segment_ids_with_orientation(
+    data: &[u8],
+    graph_storage: &GraphStorage,
+    end: usize,
+    chunk_size: usize,
+) -> (Vec<(ItemId, Orientation)>, u32) {
+    let (segment_ids, bp_lens): (Vec<_>, Vec<_>) = (0..end)
+        .into_par_iter()
+        .step_by(chunk_size)
+        .map(|chunk_start| {
+            let chunk_end = *[end, chunk_start + chunk_size].iter().min().unwrap();
+            let mut bp_len: u32 = 0;
+
+            // sits after first comma in chunk
+            let mut curr_pos = match chunk_start {
+                0 => 0,
+                x => {
+                    memchr(b',', &data[chunk_start..chunk_end])
+                    .map(|v| v + 1)                     // move *after* comma
+                    .unwrap_or(chunk_size + 3)          // add enough to chunk_size, so that while
+                                                        // loop does not run, if no comma in chunk
+                    + x
+                } // add offset back
+            };
+            let mut segment_ids = Vec::new();
+            while curr_pos - chunk_start < chunk_size + 1 {
+                // sits on comma at the end of the current segment
+                let segment_end = match memchr(b',', &data[curr_pos..]) {
+                    None => end,
+                    Some(idx) => curr_pos + idx,
+                };
+                let segment_end = if segment_end < end { segment_end } else { end };
+                if curr_pos >= segment_end {
+                    break;
+                }
+                let segment_id =
+                    get_segment_id_with_orientation(&data[curr_pos..segment_end], graph_storage);
+                bp_len += graph_storage.node_len(&segment_id.0);
+                segment_ids.push(segment_id);
+                // move curr_pos forward (after next comma)
+                curr_pos = segment_end + 1;
+            }
+            (segment_ids, bp_len)
+        })
+        .unzip();
+
+    let segment_ids = segment_ids.into_iter().concat();
+    let bp_len = bp_lens.into_iter().sum();
+
+    (segment_ids, bp_len)
 }
 
 #[cfg(test)]
