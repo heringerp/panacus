@@ -1,11 +1,5 @@
-use std::collections::HashSet;
-
 use crate::html_report::ReportItem;
-use crate::{
-    analyses::InputRequirement,
-    io::write_table,
-    util::{get_default_plot_downloads, CountType},
-};
+use crate::{io::write_table, util::get_default_plot_downloads};
 
 use super::{AnalysisSection, HistBasedAnalysis};
 
@@ -76,14 +70,6 @@ impl HistBasedAnalysis for Hist {
 }
 
 impl Hist {
-    fn count_to_input_req(count: CountType) -> HashSet<InputRequirement> {
-        match count {
-            CountType::Bp => HashSet::from([InputRequirement::Bp]),
-            CountType::Node => HashSet::from([InputRequirement::Node]),
-            CountType::Edge => HashSet::from([InputRequirement::Edge]),
-        }
-    }
-
     pub fn new() -> Self {
         Self {}
     }

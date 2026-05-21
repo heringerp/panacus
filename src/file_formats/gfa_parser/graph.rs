@@ -243,24 +243,6 @@ impl GraphStorage {
             .collect()
     }
 
-    // pub fn from_cdbg_gfa(gfa_file: &str, k: usize) -> Self {
-    //     let (node2id, path_segments, node_lens, extremities) =
-    //         Self::parse_nodes_gfa(gfa_file, Some(k));
-    //     let (edge2id, edge_count, degree) = (None, 0, None);
-    //     let node_count = node2id.len();
-
-    //     Self {
-    //         node2id,
-    //         node_lens,
-    //         edge2id,
-    //         path_segments,
-    //         node_count,
-    //         edge_count,
-    //         degree,
-    //         extremities,
-    //     }
-    // }
-
     pub fn node_len(&self, v: &ItemId) -> u32 {
         self.node_lens[v.0 as usize]
     }
@@ -410,59 +392,6 @@ impl GraphStorage {
             seq_end,
         )
     }
-
-    // pub fn get_k_plus_one_mer_edge(
-    //     &self,
-    //     u: usize,
-    //     o1: Orientation,
-    //     v: usize,
-    //     o2: Orientation,
-    //     k: usize,
-    // ) -> u64 {
-    //     let extremities = self.extremities.as_ref().unwrap();
-
-    //     let left = if o1 == Orientation::Forward {
-    //         extremities[u].1
-    //     } else {
-    //         revcmp(extremities[u].0, k)
-    //     };
-    //     let right = if o2 == Orientation::Forward {
-    //         extremities[v].0 & 0b11
-    //     } else {
-    //         revcmp(extremities[v].1, k) & 0b11
-    //     };
-
-    //     (left << 2) | right
-    // }
-
-    // pub fn get_k_plus_one_mer_right_telomer(&self, u: usize, o1: Orientation, k: usize) -> u64 {
-    //     let extremities = self.extremities.as_ref().unwrap();
-
-    //     let left = if o1 == Orientation::Forward  {
-    //         extremities[u].1
-    //     } else {
-    //         revcmp(extremities[u].0, k)
-    //     };
-
-    //     (left << 2) | right
-    // }
-
-    //#[allow(dead_code)]
-    //pub fn degree_distribution(&self) -> Option<Vec<u32>> {
-    //    match &self.degree {
-    //        Some(degree) => {
-    //            let mut hist: Vec<u32> = vec![0,1];
-    //            for i in 1..self.node_count+1 {
-    //                if degree[i] as usize >= hist.len() {
-    //                    hist.resize(degree[i] as usize +1, 0);
-    //                }
-    //                hist[degree[i] as usize] += 1;
-    //            }
-    //            Some(hist)
-    //        }
-    //        None => None
-    //    }
-    //}
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Hash, Eq, Ord)]
@@ -614,24 +543,6 @@ impl PathSegment {
             None
         }
     }
-
-    //#[allow(dead_code)]
-    //pub fn covers(&self, other: &PathSegment) -> bool {
-    //    self.sample == other.sample
-    //        && (self.haplotype == other.haplotype
-    //            || (self.haplotype.is_none()
-    //                && self.seqid.is_none()
-    //                && self.start.is_none()
-    //                && self.end.is_none()))
-    //        && (self.seqid == other.seqid
-    //            || (self.seqid.is_none() && self.start.is_none() && self.end.is_none()))
-    //        && (self.start == other.start
-    //            || self.start.is_none()
-    //            || (other.start.is_some() && self.start.unwrap() <= other.start.unwrap()))
-    //        && (self.end == other.end
-    //            || self.end.is_none()
-    //            || (other.end.is_some() && self.end.unwrap() >= other.end.unwrap()))
-    //}
 }
 
 impl fmt::Display for PathSegment {

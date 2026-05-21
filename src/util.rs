@@ -90,28 +90,6 @@ impl ItemTable {
     }
 }
 
-// pub struct InfixEqStorage {
-//     pub edges: [u32; 16],
-//     pub last_edge: u8,
-//     pub last_group: u32,
-//     pub sigma: u32, //#edges + psi
-// }
-
-// impl InfixEqStorage {
-//     pub fn new() -> Self {
-//         let edges = [0; 16];
-//         let last_edge = 0;
-//         let last_group = 0;
-//         let sigma = 0;
-//         Self {
-//             edges,
-//             last_edge,
-//             last_group,
-//             sigma,
-//         }
-//     }
-// }
-
 #[derive(Debug, Clone)]
 pub struct ActiveTable {
     pub items: Vec<bool>,
@@ -526,11 +504,6 @@ pub fn revcmp(kmer: u64, k: usize) -> u64 {
         >> (64 - k as u64 * 2)
 }
 
-// pub fn get_infix(kmer_bits: u64, k: usize) -> u64 {
-//     let mask: u64 = (1 << (2 * (k - 1))) - 1;
-//     (kmer_bits >> 2) & mask
-// }
-
 #[allow(dead_code)]
 pub fn canonical(kmer_bits: u64, k: usize) -> u64 {
     let kmer_bits_rc = revcmp(kmer_bits, k);
@@ -546,13 +519,6 @@ pub fn to_id(s: &str) -> String {
         .to_lowercase()
         .replace(&[' ', '|', '/', '\\', '\'', '"'], "-")
 }
-
-//pub fn log2_add(a: f64, b: f64) -> f64 {
-//    // we assume both a and b are log2'd
-//    let (a, b) = if a < b { (a, b) } else { (b, a) };
-//
-//    b + (1.0 + (a - b).exp2()).log2()
-//}
 
 #[cfg(test)]
 mod tests {

@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use crate::{
-    analyses::info::FileInfo, file_formats::gfa_parser::SparseMatrix, hist::Hist, util::ItemTable,
+    analyses::info::FileInfo,
+    file_formats::gfa_parser::SparseMatrix,
+    hist::Hist,
+    util::{ItemTable, Threshold},
 };
 
 pub struct CoverageMatrix {
@@ -121,6 +124,87 @@ impl CoverageMatrix {
         unimplemented!()
     }
 
+    /// Returns a histogram and the features
+    /// that really appear in the histogram (i.e. are non-zero).
+    /// If features is Some(list), the list is used to subset the features
+    pub fn get_hist_and_used_features(
+        &self,
+        features: Option<&Vec<usize>>,
+        paths: &Vec<usize>,
+    ) -> (Hist, Vec<usize>) {
+        let c = Threshold::Absolute(1);
+        self.get_hist_and_used_features_with_coverage(features, paths, &c)
+    }
+
+    pub fn get_hist_and_used_features_with_coverage(
+        &self,
+        features: Option<&Vec<usize>>,
+        paths: &Vec<usize>,
+        c: &Threshold,
+    ) -> (Hist, Vec<usize>) {
+        let (abacus, used_features) =
+            self.get_abacus_and_used_features_with_coverage(features, paths, c);
+        log::info!("Hist-needed abacus: {:?}", abacus);
+        let mut hist = Hist::from_maximum_coverage(
+            paths.len(),
+            self.feature_type.to_string(),
+            self.run_id.to_string(),
+            self.run_name.to_string(),
+        );
+        for (i, c) in abacus.iter().enumerate() {
+            hist.insert_feature_of_coverage_and_length(*c as usize, self.feature_lengths[i]);
+        }
+        (hist, used_features)
+    }
+
+    pub fn get_abacus_and_used_features_with_coverage(
+        &self,
+        features: Option<&Vec<usize>>,
+        paths: &Vec<usize>,
+        c: &Threshold,
+    ) -> (Vec<usize>, Vec<usize>) {
+        let all_features = (0..self.count_of_features).collect();
+        let features = match features {
+            Some(f) => f,
+            None => &all_features,
+        };
+        let mut paths = paths.clone();
+        paths.sort();
+        let mut non_zeroes = Vec::new();
+        let mut abacus = vec![0; self.count_of_features];
+        for feature in features {
+            let mut path_idx = 0;
+            let mut count = 0;
+            let occurrences = self.matrix.get_occurrences(*feature);
+            // log::info!(
+            //     "Looking at feature: {} | {:?}, {:?}",
+            //     *feature,
+            //     occurrences,
+            //     paths
+            // );
+            for o in occurrences {
+                let o = *o as usize;
+                while path_idx < paths.len() && paths[path_idx] < o {
+                    path_idx += 1;
+                }
+                if path_idx >= paths.len() {
+                    break;
+                } else if o < paths[path_idx] {
+                    continue;
+                } else if o == paths[path_idx] {
+                    count += 1;
+                    path_idx += 1;
+                }
+            }
+            // log::info!("Count: {}", count);
+            if count >= c.to_absolute(self.count_of_features) {
+                non_zeroes.push(*feature);
+                abacus[*feature] = count;
+            }
+        }
+        (abacus, non_zeroes)
+    }
+
     pub fn get_feature_counts_for_subset(
         &self,
         _features: &Vec<usize>,
@@ -131,6 +215,10 @@ impl CoverageMatrix {
 
     pub fn get_feature_name(&self, feature: usize) -> &str {
         &self.feature_names[feature]
+    }
+
+    pub fn get_features_for_paths(&self, _paths: &Vec<usize>) -> Vec<usize> {
+        unimplemented!()
     }
 
     /// Creates an iterator over indices in the order (in order),

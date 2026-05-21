@@ -11,6 +11,7 @@ use crate::analyses::growth::Growth;
 use crate::analyses::hist::Hist;
 use crate::analyses::node_distribution::NodeDistribution;
 use crate::analyses::ordered_histgrowth::OrderedHistgrowth;
+use crate::analyses::section_growth::SectionGrowth;
 use crate::analyses::table::Table;
 use crate::analyses::Analysis;
 use crate::util::CountType;
@@ -124,6 +125,11 @@ impl AnalysisParameter {
             Self::CoverageLine { reference } => {
                 Analysis::MatrixBased(Box::new(CoverageLine::new(reference)))
             }
+            Self::SectionGrowth {
+                sections,
+                coverage,
+                quorum,
+            } => Analysis::MatrixBased(Box::new(SectionGrowth::new(sections, coverage, quorum))),
             _ => unimplemented!(),
         }
     }

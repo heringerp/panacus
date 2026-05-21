@@ -5,5 +5,4 @@ pub mod gfa_parser;
 pub trait FileFormatParser {
     fn generate_hist(self: Box<Self>) -> Hist;
     fn generate_matrix(self: Box<Self>) -> CoverageMatrix;
-    fn get_file_info(&self);
 }

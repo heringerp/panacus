@@ -21,7 +21,7 @@ use std::time::Instant;
 use std::{collections::HashMap, str};
 use std::{collections::HashSet, io::BufRead};
 
-use abacus::AbacusByTotal;
+pub use abacus::AbacusByTotal;
 use util::{
     parse_path_identifier, parse_path_seq_to_item_vec, parse_walk_identifier,
     parse_walk_seq_to_item_vec, update_tables_edgecount,
@@ -42,6 +42,7 @@ pub use graph::Edge;
 pub use graph::ItemId;
 pub use graph::Orientation;
 pub use graph::PathSegment;
+pub use hist::choose;
 pub use hist::Hist3D;
 pub use hist::ThresholdContainer;
 pub use sparse_matrix::SparseMatrix;
@@ -111,10 +112,6 @@ impl FileFormatParser for GfaParser {
             item_table,
         );
         matrix
-    }
-
-    fn get_file_info(&self) {
-        unimplemented!()
     }
 }
 
