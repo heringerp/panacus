@@ -68,13 +68,9 @@ impl FileFormatParser for GfaParser {
             self.get_run_name(),
         );
         let (abacus, _, _) = self.get_abacus_by_total();
-        log::info!("ABACUS COUNTABLE: {:?}", abacus.countable);
-        log::info!("ABACUS COUNT: {:?}", abacus.count);
-        log::info!("ABACUS UNCOVERED BPS: {:?}", abacus.uncovered_bps);
         for (idx, feature_coverage) in abacus.countable.iter().enumerate().skip(1) {
             if self.count_type == CountType::Bp {
                 let length = self.graph_storage.node_lens[idx];
-                log::info!("cov: {}, len: {}", feature_coverage, length);
                 hist.insert_feature_of_coverage_and_length(
                     *feature_coverage as usize,
                     length as usize,
@@ -343,11 +339,6 @@ impl GfaParser {
             path_order.push((path_id, (groups.len() - 1) as GroupSize));
         }
 
-        println!("EXCLUDE_TABLE: {:?}", exclude_table);
-        println!("SUBSET_COVERED_BPS: {:?}", subset_covered_bps);
-        println!("ITEM_TABLE ITEMS: {:?}", item_table.items);
-        println!("ITEM_TABLE ID_PREFSUM: {:?}", item_table.id_prefsum);
-
         let path_names: Vec<String> = self
             .graph_storage
             .path_segments
@@ -365,10 +356,6 @@ impl GfaParser {
             .into_iter()
             .map(|x| x.1)
             .collect();
-        log::info!("PATH  NAMES: {:?}", path_names);
-        log::info!("GROUP NAMES: {:?}", group_names);
-        log::info!("MASK NAMES: {:?}", mgroup_names);
-
         let (item_table, groups) = if group_names == path_names
             && group_names.len() == mgroup_names.len()
             && exclude_table.is_none()
@@ -377,13 +364,8 @@ impl GfaParser {
         } else {
             Self::collapse_item_table(item_table, group_names, mgroup_names, &exclude_table)
         };
-        println!("ITEM_TABLE ITEMS: {:?}", item_table.items);
-        println!("ITEM_TABLE ID_PREFSUM: {:?}", item_table.id_prefsum);
-        log::info!("GROUP NAMES: {:?}", groups);
         let (feature_lengths, feature_names) =
             Self::get_feature_lengths(graph_storage, &exclude_table, &subset_covered_bps, count);
-        log::info!("feature names: {:?}", feature_names);
-        log::info!("feature lengths: {:?}", feature_lengths);
 
         Ok((
             item_table,

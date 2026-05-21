@@ -34,7 +34,6 @@ impl MatrixBasedAnalysis for OrderedHistgrowth {
         let mut res = write_metadata_comments()?;
 
         let inner = self.inner.as_ref().unwrap();
-        log::info!("GROWTHS: {:?}", inner.growths);
         // insert empty row for 0 element
         let m = inner.hist_aux.coverage.len();
         let mut header_cols = vec![vec![
@@ -192,14 +191,6 @@ pub fn calc_growth(
     let q = f64::max(0.0, t_quorum.to_relative(n_paths));
     let feature_lengths = matrix.get_feature_lengths();
 
-    log::info!(
-        "Calc growth: c={}, q={}, num_features={}, lens={:?}",
-        c,
-        q,
-        matrix.get_feature_count(),
-        feature_lengths
-    );
-
     for i in 0..matrix.get_feature_count() {
         // If this feature appears less often than the coverage
         // skip it.
@@ -209,7 +200,6 @@ pub fn calc_growth(
 
         let entry_indices: Vec<usize> = matrix.get_appearances_for_order(i, order);
         let mut entry_indices_index = 0;
-        log::info!("Looking at appearances of {}: {:?}", i, entry_indices);
         for path_idx in entry_indices[0]..n_paths {
             if entry_indices_index < entry_indices.len() - 1
                 && path_idx >= entry_indices[entry_indices_index + 1]
@@ -219,13 +209,6 @@ pub fn calc_growth(
             let num_seen_paths = path_idx + 1;
             let num_appearances = entry_indices_index + 1;
             let ratio = num_appearances as f64 / num_seen_paths as f64;
-            log::info!(
-                "path_idx: {}, eii: {} [{}], RATIO: {}",
-                path_idx,
-                entry_indices_index,
-                entry_indices[entry_indices_index],
-                ratio
-            );
             if ratio >= q {
                 res[path_idx] += feature_lengths[i] as f64;
             }

@@ -235,8 +235,10 @@ fn execute_pipeline<W: Write>(
     for file in instructions {
         let (file_parser, analyses) = get_file_parser(file)?;
         let (hist_based, matrix_based) = split_analyses(analyses);
+        log::info!("File parser generated");
         if !matrix_based.is_empty() {
             let matrix = file_parser.generate_matrix();
+            log::info!("Matrix generated");
             let report = match shall_write_html {
                 true => get_matrix_reports(matrix, matrix_based, hist_based, config_content, json)?,
                 false => get_matrix_tables(matrix, matrix_based, hist_based)?,
@@ -244,6 +246,7 @@ fn execute_pipeline<W: Write>(
             writeln!(out, "{report}")?;
         } else {
             let hist = file_parser.generate_hist();
+            log::info!("Hist generated");
             let report = match shall_write_html {
                 true => get_hist_reports(hist, hist_based, config_content, json)?,
                 false => get_hist_tables(hist, hist_based)?,
@@ -262,7 +265,12 @@ fn get_hist_reports(
 ) -> anyhow::Result<String> {
     let reports: Vec<AnalysisSection> = hist_based
         .into_iter()
-        .filter_map(|mut x| x.generate_report_section(&hist).ok())
+        .filter_map(|mut x| {
+            log::info!("Doing hist-analysis: {}", x.get_type());
+            let out = x.generate_report_section(&hist).ok();
+            log::info!("Finished hist-analysis: {}", x.get_type());
+            out
+        })
         .flatten()
         .collect();
     let mut registry = handlebars::Handlebars::new();
@@ -322,13 +330,23 @@ fn get_matrix_reports(
     let mut reports: Vec<AnalysisSection> = matrix_based
         .into_iter()
         // TODO remove all filter_maps and replace with correct error handling
-        .filter_map(|mut x| x.generate_report_section(&matrix).ok())
+        .filter_map(|mut x| {
+            log::info!("Doing matrix-analysis: {}", x.get_type());
+            let out = x.generate_report_section(&matrix).ok();
+            log::info!("Finished matrix-analysis: {}", x.get_type());
+            out
+        })
         .flatten()
         .collect();
     let hist = matrix.get_hist();
     let mut hist_reports: Vec<AnalysisSection> = hist_based
         .into_iter()
-        .filter_map(|mut x| x.generate_report_section(&hist).ok())
+        .filter_map(|mut x| {
+            log::info!("Doing hist-analysis: {}", x.get_type());
+            let out = x.generate_report_section(&hist).ok();
+            log::info!("Finished hist-analysis: {}", x.get_type());
+            out
+        })
         .flatten()
         .collect();
     reports.append(&mut hist_reports);
