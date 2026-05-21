@@ -132,7 +132,7 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
     let mut instructions: Vec<FileRun> = Vec::new();
     let mut shall_write_html = false;
     let mut dry_run = false;
-    let mut _json = false;
+    let mut json = false;
     let mut config_content = "EMPTY".to_string();
 
     if let Some(args) = args.subcommand_matches("render") {
@@ -166,7 +166,7 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
         instructions.extend(report?);
         if let Some(report_matches) = args.subcommand_matches("report") {
             dry_run = report_matches.get_flag("dry_run");
-            _json = report_matches.get_flag("json");
+            json = report_matches.get_flag("json");
             let config = report_matches
                 .get_one::<String>("yaml_file")
                 .expect("Contains required yaml config")
@@ -183,9 +183,6 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
     if let Some(growth) = commands::growth::get_instructions(&args) {
         instructions.extend(growth?);
     }
-    // if let Some(histgrowth) = commands::histgrowth::get_instructions(&args) {
-    //     instructions.extend(histgrowth?);
-    // }
     if let Some(info) = commands::info::get_instructions(&args) {
         instructions.extend(info?);
     }
@@ -212,7 +209,13 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
 
     // ride on!
     if !dry_run {
-        execute_pipeline(instructions, &mut out, &config_content, shall_write_html)?;
+        execute_pipeline(
+            instructions,
+            &mut out,
+            &config_content,
+            shall_write_html,
+            json,
+        )?;
     } else {
         println!("{:#?}", instructions);
     }
@@ -227,6 +230,7 @@ fn execute_pipeline<W: Write>(
     out: &mut std::io::BufWriter<W>,
     config_content: &str,
     shall_write_html: bool,
+    json: bool,
 ) -> anyhow::Result<()> {
     for file in instructions {
         let (file_parser, analyses) = get_file_parser(file)?;
@@ -234,14 +238,14 @@ fn execute_pipeline<W: Write>(
         if !matrix_based.is_empty() {
             let matrix = file_parser.generate_matrix();
             let report = match shall_write_html {
-                true => get_matrix_reports(matrix, matrix_based, hist_based, config_content)?,
+                true => get_matrix_reports(matrix, matrix_based, hist_based, config_content, json)?,
                 false => get_matrix_tables(matrix, matrix_based, hist_based)?,
             };
             writeln!(out, "{report}")?;
         } else {
             let hist = file_parser.generate_hist();
             let report = match shall_write_html {
-                true => get_hist_reports(hist, hist_based, config_content)?,
+                true => get_hist_reports(hist, hist_based, config_content, json)?,
                 false => get_hist_tables(hist, hist_based)?,
             };
             writeln!(out, "{report}")?;
@@ -254,6 +258,7 @@ fn get_hist_reports(
     hist: Hist,
     hist_based: Vec<Box<dyn HistBasedAnalysis>>,
     config_content: &str,
+    json: bool,
 ) -> anyhow::Result<String> {
     let reports: Vec<AnalysisSection> = hist_based
         .into_iter()
@@ -261,13 +266,18 @@ fn get_hist_reports(
         .flatten()
         .collect();
     let mut registry = handlebars::Handlebars::new();
-    let report = AnalysisSection::generate_report(
-        reports,
-        &mut registry,
-        "<Placeholder Filename>",
-        config_content,
-    )?;
-    Ok(report)
+    if json {
+        let report = serde_json::to_string_pretty(&reports)?;
+        Ok(report)
+    } else {
+        let report = AnalysisSection::generate_report(
+            reports,
+            &mut registry,
+            "<Placeholder Filename>",
+            config_content,
+        )?;
+        Ok(report)
+    }
 }
 
 fn get_hist_tables(
@@ -307,6 +317,7 @@ fn get_matrix_reports(
     matrix_based: Vec<Box<dyn MatrixBasedAnalysis>>,
     hist_based: Vec<Box<dyn HistBasedAnalysis>>,
     config_content: &str,
+    json: bool,
 ) -> anyhow::Result<String> {
     let mut reports: Vec<AnalysisSection> = matrix_based
         .into_iter()
@@ -322,14 +333,19 @@ fn get_matrix_reports(
         .collect();
     reports.append(&mut hist_reports);
 
-    let mut registry = handlebars::Handlebars::new();
-    let report = AnalysisSection::generate_report(
-        reports,
-        &mut registry,
-        "<Placeholder Filename>",
-        config_content,
-    )?;
-    Ok(report)
+    if json {
+        let report = serde_json::to_string_pretty(&reports)?;
+        Ok(report)
+    } else {
+        let mut registry = handlebars::Handlebars::new();
+        let report = AnalysisSection::generate_report(
+            reports,
+            &mut registry,
+            "<Placeholder Filename>",
+            config_content,
+        )?;
+        Ok(report)
+    }
 }
 
 fn split_analyses(

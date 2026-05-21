@@ -9,6 +9,7 @@ use crate::analyses::coverage_colors::CoverageColors;
 use crate::analyses::coverage_line::CoverageLine;
 use crate::analyses::growth::Growth;
 use crate::analyses::hist::Hist;
+use crate::analyses::info::Info;
 use crate::analyses::node_distribution::NodeDistribution;
 use crate::analyses::ordered_histgrowth::OrderedHistgrowth;
 use crate::analyses::section_growth::SectionGrowth;
@@ -134,6 +135,7 @@ impl AnalysisParameter {
             Self::Similarity { cluster_method } => {
                 Analysis::MatrixBased(Box::new(Similarity::new(cluster_method)))
             }
+            Self::Info => Analysis::MatrixBased(Box::new(Info::new())),
             _ => unimplemented!("Other analyses have not been yet implemented"),
         }
     }
