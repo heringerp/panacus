@@ -12,6 +12,7 @@ use crate::analyses::hist::Hist;
 use crate::analyses::node_distribution::NodeDistribution;
 use crate::analyses::ordered_histgrowth::OrderedHistgrowth;
 use crate::analyses::section_growth::SectionGrowth;
+use crate::analyses::similarity::Similarity;
 use crate::analyses::table::Table;
 use crate::analyses::Analysis;
 use crate::util::CountType;
@@ -130,7 +131,10 @@ impl AnalysisParameter {
                 coverage,
                 quorum,
             } => Analysis::MatrixBased(Box::new(SectionGrowth::new(sections, coverage, quorum))),
-            _ => unimplemented!(),
+            Self::Similarity { cluster_method } => {
+                Analysis::MatrixBased(Box::new(Similarity::new(cluster_method)))
+            }
+            _ => unimplemented!("Other analyses have not been yet implemented"),
         }
     }
 }

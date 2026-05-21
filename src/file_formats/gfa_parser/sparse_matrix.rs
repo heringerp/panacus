@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::util::{CountSize, GroupSize, ItemTable};
 
 #[derive(Debug, Clone)]
@@ -41,6 +43,45 @@ impl SparseMatrix {
             result += self.v.as_ref().expect("Has value")[i];
         }
         result
+    }
+
+    /// Transforms the contents into sparse column format
+    /// Used if column-wise access is necessary
+    pub fn get_csc(&self, n_paths: usize) -> (Vec<usize>, Vec<usize>) {
+        let non_zeroes = self.c.len();
+        let mut c = vec![0; n_paths + 1];
+        let mut r = vec![0; non_zeroes];
+
+        // Count the number of non-zero entries for each column
+        // (stored with an offset of one for the prefix sum)
+        for &col in self.c.iter() {
+            c[col as usize + 1] += 1;
+        }
+
+        // Prefix sum
+        for i in 0..n_paths {
+            c[i + 1] += c[i];
+        }
+
+        // Scatter-stage
+        // Stores where we are currently inserting elements for a path
+        // (is one element longer than it has to be, but removing it would
+        // be more runtime than the memory cost of having it)
+        let mut current_col_pointers = c.clone();
+        for (row, (&start, &end)) in self.r.iter().tuple_windows().enumerate() {
+            for &path in &self.c[start..end] {
+                let destination = current_col_pointers[path as usize];
+                r[destination] = row;
+                // Increase the position we write to for this path
+                current_col_pointers[path as usize] += 1;
+            }
+        }
+
+        (c, r)
+    }
+
+    pub fn get_csr(&self) -> (Vec<usize>, Vec<usize>) {
+        (self.r.clone(), self.c.iter().map(|&x| x as usize).collect())
     }
 
     pub fn get_feature_occurrence_count(&self, feature: usize) -> usize {

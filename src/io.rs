@@ -8,7 +8,7 @@ use flate2::read::MultiGzDecoder;
 use quick_csv::Csv;
 
 /* internal use */
-use crate::file_formats::gfa_parser::{PathSegment, SparseMatrix, ThresholdContainer};
+use crate::file_formats::gfa_parser::PathSegment;
 use crate::util::*;
 
 pub fn bufreader_from_compressed_gfa(gfa_file: &str) -> BufReader<Box<dyn Read>> {

@@ -52,7 +52,6 @@ pub struct GfaParser {
     filename: String,
     count_type: CountType,
     graph_mask_parameters: GraphMaskParameters,
-    is_nice: bool,
 
     // Generated
     graph_storage: GraphStorage,
@@ -128,8 +127,6 @@ impl GfaParser {
             filename: filename.to_owned(),
             count_type,
             graph_mask_parameters,
-            is_nice,
-
             graph_storage,
             graph_mask,
         })
@@ -707,25 +704,6 @@ fn get_include_coords<'a>(
             }
         }
     }
-}
-
-fn get_count_indices(count_types: &Vec<CountType>) -> HashMap<CountType, Vec<usize>> {
-    let mut indices: HashMap<CountType, Vec<usize>> = HashMap::new();
-    for (i, count_type) in count_types
-        .iter()
-        .map(|c| match c {
-            CountType::Node => &CountType::Bp,
-            count => count,
-        })
-        .enumerate()
-    {
-        if let Some(entry) = indices.get_mut(count_type) {
-            (*entry).push(i);
-        } else {
-            indices.insert(*count_type, vec![i]);
-        }
-    }
-    indices
 }
 
 fn skip_path(item_table: &mut ItemTable, num_path: &mut usize, buf: &mut Vec<u8>) {

@@ -116,14 +116,6 @@ impl CoverageMatrix {
             .insert_item_table(self.count_of_features, item_table);
     }
 
-    pub fn get_regional_iterator(&self, _window_size: usize, _window_step_size: usize) {
-        unimplemented!()
-    }
-
-    pub fn get_feature_counts_for_paths(&self, _paths: &Vec<usize>) -> Vec<usize> {
-        unimplemented!()
-    }
-
     /// Returns a histogram and the features
     /// that really appear in the histogram (i.e. are non-zero).
     /// If features is Some(list), the list is used to subset the features
@@ -155,6 +147,17 @@ impl CoverageMatrix {
             hist.insert_feature_of_coverage_and_length(*c as usize, self.feature_lengths[i]);
         }
         (hist, used_features)
+    }
+
+    /// Gets a CSC (compressed-sparse-column) table, i.e. a table
+    /// containing the occuring features by path (as opposed to by
+    /// feature)
+    pub fn get_csc(&self) -> (Vec<usize>, Vec<usize>) {
+        self.matrix.get_csc(self.path_names.len())
+    }
+
+    pub fn get_csr(&self) -> (Vec<usize>, Vec<usize>) {
+        self.matrix.get_csr()
     }
 
     pub fn get_abacus_and_used_features_with_coverage(
@@ -205,20 +208,8 @@ impl CoverageMatrix {
         (abacus, non_zeroes)
     }
 
-    pub fn get_feature_counts_for_subset(
-        &self,
-        _features: &Vec<usize>,
-        _paths: &Vec<usize>,
-    ) -> Vec<usize> {
-        unimplemented!()
-    }
-
     pub fn get_feature_name(&self, feature: usize) -> &str {
         &self.feature_names[feature]
-    }
-
-    pub fn get_features_for_paths(&self, _paths: &Vec<usize>) -> Vec<usize> {
-        unimplemented!()
     }
 
     /// Creates an iterator over indices in the order (in order),

@@ -1,14 +1,12 @@
-use kodama::Dendrogram;
+use itertools::Itertools;
+use kodama::{linkage, Dendrogram};
 
 use crate::analyses::MatrixBasedAnalysis;
 use crate::analysis_parameter::ClusterMethod;
 use crate::coverage_matrix::CoverageMatrix;
 use crate::util::get_default_plot_downloads;
-use crate::{
-    analyses::InputRequirement, html_report::ReportItem, io::write_metadata_comments,
-    util::CountType,
-};
-use std::collections::HashSet;
+use crate::{html_report::ReportItem, io::write_metadata_comments};
+use std::collections::HashMap;
 use std::usize;
 
 use super::AnalysisSection;
@@ -74,14 +72,6 @@ impl MatrixBasedAnalysis for Similarity {
 }
 
 impl Similarity {
-    fn count_to_input_req(count: CountType) -> HashSet<InputRequirement> {
-        match count {
-            CountType::Bp => HashSet::from([InputRequirement::Bp]),
-            CountType::Node => HashSet::from([InputRequirement::Node]),
-            CountType::Edge => HashSet::from([InputRequirement::Edge]),
-        }
-    }
-
     pub fn new(cluster_method: ClusterMethod) -> Self {
         Self {
             cluster_method,
@@ -90,8 +80,57 @@ impl Similarity {
         }
     }
 
-    fn set_table(&mut self, _matrix: &CoverageMatrix) {
-        unimplemented!()
+    fn set_table(&mut self, matrix: &CoverageMatrix) {
+        let (r, c) = matrix.get_csr();
+        let mut labels = matrix.get_path_names().clone();
+
+        let tuples: Vec<(_, _)> = r.iter().map(|x| *x as usize).tuple_windows().collect();
+
+        let mut path_similarities: HashMap<u128, usize> = HashMap::new();
+        let mut path_lens: HashMap<usize, usize> = HashMap::new();
+        let node_lens = matrix.get_feature_lengths();
+        for (index, tuple) in tuples.iter().enumerate() {
+            let node_length = node_lens[index] as usize;
+            for x in &c[tuple.0..tuple.1] {
+                *path_lens.entry(*x).or_insert(0) += node_length;
+                for y in &c[tuple.0..tuple.1] {
+                    *path_similarities
+                        .entry((*x as u128) << 64 | *y as u128)
+                        .or_insert(0) += node_length;
+                }
+            }
+        }
+        log::info!("Path lengths: {:?}", path_lens);
+
+        let group_count = labels.len();
+        let mut table: Vec<Vec<f32>> = vec![vec![0.0; group_count]; group_count];
+        for i in 0..group_count {
+            for j in 0..group_count {
+                let intersection = path_similarities
+                    .get(&((i as u128) << 64 | j as u128))
+                    .copied()
+                    .unwrap_or_default();
+                table[i][j] =
+                    intersection as f32 / (path_lens[&(i)] + path_lens[&(j)] - intersection) as f32;
+            }
+        }
+
+        let mut distances = calculate_distances(&table);
+
+        let method = self.cluster_method.to_kodama();
+        let dend = linkage(&mut distances, table.len(), method);
+        let order = get_order_from_dendrogram(&dend);
+        let mut order = order.into_iter().enumerate().collect::<Vec<_>>();
+        order.sort_by_key(|el| el.1);
+        let order = order.into_iter().map(|el| el.0).collect::<Vec<_>>();
+        sort_by_indices(&mut table, &order);
+        for row in table.iter_mut() {
+            sort_by_indices(row, &order);
+        }
+        sort_by_indices(&mut labels, &order);
+
+        self.table = Some(table);
+        self.labels = Some(labels);
     }
 }
 
