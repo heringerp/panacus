@@ -192,7 +192,7 @@ impl GraphStorage {
         }
     }
 
-    pub fn from_gfa(gfa_file: &str, is_nice: bool, count_type: CountType) -> Self {
+    pub fn from_gfa(gfa_file: &str, is_nice: bool) -> Self {
         let (node2id, path_segments, node_lens, _extremities) =
             Self::parse_nodes_gfa(gfa_file, None);
         let index_edges: bool = true;

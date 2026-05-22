@@ -117,7 +117,7 @@ impl GfaParser {
         graph_mask_parameters: GraphMaskParameters,
         is_nice: bool,
     ) -> Result<Self, Error> {
-        let graph_storage = GraphStorage::from_gfa(filename, is_nice, count_type);
+        let graph_storage = GraphStorage::from_gfa(filename, is_nice);
         let graph_mask = GraphMask::from_datamgr(&graph_mask_parameters, &graph_storage)?;
         Ok(Self {
             filename: filename.to_owned(),
