@@ -6,7 +6,6 @@ use crate::analysis_parameter::ClusterMethod;
 use crate::coverage_matrix::CoverageMatrix;
 use crate::util::get_default_plot_downloads;
 use crate::{html_report::ReportItem, io::write_metadata_comments};
-use std::collections::HashMap;
 use std::usize;
 
 use super::AnalysisSection;
@@ -83,43 +82,47 @@ impl Similarity {
     fn set_table(&mut self, matrix: &CoverageMatrix) {
         let (r, c) = matrix.get_csr();
         let mut labels = matrix.get_path_names().clone();
+        let group_count = labels.len();
 
         let tuples: Vec<(_, _)> = r.iter().map(|x| *x as usize).tuple_windows().collect();
 
-        let mut path_similarities: HashMap<u128, usize> = HashMap::new();
-        let mut path_lens: HashMap<usize, usize> = HashMap::new();
+        // We can use a matrix as nearly all paths will share at least one feature with every
+        // other path
+        let mut path_similarities: Vec<Vec<usize>> = vec![vec![0; group_count]; group_count];
+        let mut path_lens: Vec<usize> = vec![0; labels.len()];
         let node_lens = matrix.get_feature_lengths();
         for (index, tuple) in tuples.iter().enumerate() {
             let node_length = node_lens[index] as usize;
             for x in &c[tuple.0..tuple.1] {
-                *path_lens.entry(*x).or_insert(0) += node_length;
+                path_lens[*x] += node_length;
                 for y in &c[tuple.0..tuple.1] {
-                    *path_similarities
-                        .entry((*x as u128) << 64 | *y as u128)
-                        .or_insert(0) += node_length;
+                    path_similarities[*x][*y] += node_length;
                 }
             }
         }
         log::info!("Path lengths: {:?}", path_lens);
 
-        let group_count = labels.len();
         let mut table: Vec<Vec<f32>> = vec![vec![0.0; group_count]; group_count];
         for i in 0..group_count {
             for j in 0..group_count {
-                let intersection = path_similarities
-                    .get(&((i as u128) << 64 | j as u128))
-                    .copied()
-                    .unwrap_or_default();
+                let intersection = path_similarities[i][j];
                 table[i][j] =
-                    intersection as f32 / (path_lens[&(i)] + path_lens[&(j)] - intersection) as f32;
+                    intersection as f32 / (path_lens[i] + path_lens[j] - intersection) as f32;
             }
         }
 
+        log::info!("Done calculating Jaccard metrics");
+
         let mut distances = calculate_distances(&table);
+
+        log::info!("Done calculating distances");
 
         let method = self.cluster_method.to_kodama();
         let dend = linkage(&mut distances, table.len(), method);
         let order = get_order_from_dendrogram(&dend);
+
+        log::info!("Done clustering");
+
         let mut order = order.into_iter().enumerate().collect::<Vec<_>>();
         order.sort_by_key(|el| el.1);
         let order = order.into_iter().map(|el| el.0).collect::<Vec<_>>();
