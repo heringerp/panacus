@@ -17,7 +17,9 @@ use crate::{
 pub struct VcfParser {
     filename: String,
     count_type: VcfCountType,
-    groupby_sample: bool,
+    /// The same as groupby_haplotypes, however,
+    /// this requires the VCF to have constant ploidy for this sample
+    split_haplotypes: bool,
     current_variant_id: usize,
 }
 
@@ -26,16 +28,19 @@ impl FileFormatParser for VcfParser {
         let file = File::open(&self.filename).expect("Can read file");
         let buf_reader = BufReader::new(file);
         let mut lines = buf_reader.lines().map(|l| l.expect("Failed to read line"));
-        let mut header =
-            VcfHeader::parse(&mut lines, self.groupby_sample).expect("Failed to parse header");
+        let mut header = VcfHeader::parse(&mut lines).expect("Failed to parse header");
         let paths = std::mem::take(&mut header.paths);
         let run_id = format!(
             "{}-{}-{}",
-            &self.filename, self.count_type, self.groupby_sample
+            &self.filename,
+            self.count_type,
+            self.get_split_haplotype_text()
         );
         let run_name = format!(
             "{}-{}-{}",
-            &self.filename, self.count_type, self.groupby_sample
+            &self.filename,
+            self.count_type,
+            self.get_split_haplotype_text()
         );
         let mut hist =
             Hist::from_maximum_coverage(paths.len(), self.count_type.to_string(), run_id, run_name);
@@ -65,16 +70,19 @@ impl FileFormatParser for VcfParser {
         let file = File::open(&self.filename).expect("Can read file");
         let buf_reader = BufReader::new(file);
         let mut lines = buf_reader.lines().map(|l| l.expect("Failed to read line"));
-        let mut header =
-            VcfHeader::parse(&mut lines, self.groupby_sample).expect("Failed to parse header");
+        let mut header = VcfHeader::parse(&mut lines).expect("Failed to parse header");
         let paths = std::mem::take(&mut header.paths);
         let run_id = format!(
             "{}-{}-{}",
-            &self.filename, self.count_type, self.groupby_sample
+            &self.filename,
+            self.count_type,
+            self.get_split_haplotype_text()
         );
         let run_name = format!(
             "{}-{}-{}",
-            &self.filename, self.count_type, self.groupby_sample
+            &self.filename,
+            self.count_type,
+            self.get_split_haplotype_text()
         );
         let file_info = FileInfo::new("vcf");
         let mut matrix =
@@ -83,7 +91,54 @@ impl FileFormatParser for VcfParser {
         let mut num_variants = 0;
         let mut num_alt_alleles = 0;
         let mut singleton_variants = 0;
-        matrix.set_path_names(paths);
+        let mut first_variant = true;
+        let line = lines.next().expect("Has at least one variant");
+        let variants = self
+            .parse_variant_line_to_allele_list(&line)
+            .expect("Failed to parse variant");
+        for variant in variants {
+            let feature_length = match self.count_type {
+                VcfCountType::Variants => 1,
+                VcfCountType::AltLength => variant.alt_length,
+            };
+            let name = match variant.id {
+                "." => self.get_variant_id(),
+                id => format!("{}-{id}", self.get_variant_id()),
+            };
+            let pos = variant.pos;
+            let feature = variant.value;
+            if first_variant {
+                let paths = if self.split_haplotypes {
+                    paths
+                        .iter()
+                        .enumerate()
+                        .flat_map(|(idx, name)| {
+                            if feature[idx].len() == 1 {
+                                vec![format!("{name}#0")]
+                            } else {
+                                (1..feature[idx].len() + 1)
+                                    .map(|i| format!("{name}#{i}"))
+                                    .collect_vec()
+                            }
+                        })
+                        .collect()
+                } else {
+                    paths.clone()
+                };
+                matrix.set_path_names(paths);
+                first_variant = false;
+            }
+            if feature.iter().flatten().sum::<u32>() == 1 {
+                singleton_variants += 1;
+            }
+            matrix.insert_feature(
+                name,
+                feature_length,
+                pos,
+                feature.into_iter().flatten().collect(),
+            );
+            num_alt_alleles += 1;
+        }
         for line in lines {
             let variants = self
                 .parse_variant_line_to_allele_list(&line)
@@ -99,10 +154,15 @@ impl FileFormatParser for VcfParser {
                 };
                 let pos = variant.pos;
                 let feature = variant.value;
-                if feature.iter().sum::<u32>() == 1 {
+                if feature.iter().flatten().sum::<u32>() == 1 {
                     singleton_variants += 1;
                 }
-                matrix.insert_feature(name, feature_length, pos, feature);
+                matrix.insert_feature(
+                    name,
+                    feature_length,
+                    pos,
+                    feature.into_iter().flatten().collect(),
+                );
                 num_alt_alleles += 1;
             }
             num_variants += 1;
@@ -124,13 +184,20 @@ impl FileFormatParser for VcfParser {
 }
 
 impl VcfParser {
-    pub fn new(filename: &str, count_type: VcfCountType, groupby_sample: bool) -> Result<Self> {
+    pub fn new(filename: &str, count_type: VcfCountType, split_haplotypes: bool) -> Result<Self> {
         Ok(Self {
             filename: filename.to_owned(),
             count_type,
-            groupby_sample,
+            split_haplotypes,
             current_variant_id: 1,
         })
+    }
+
+    fn get_split_haplotype_text(&self) -> &str {
+        match self.split_haplotypes {
+            true => "haplotypes",
+            false => "samples",
+        }
     }
 
     fn get_variant_id(&mut self) -> String {
@@ -143,39 +210,48 @@ impl VcfParser {
     fn parse_variant_line_to_allele_list<'a>(
         &self,
         line: &'a str,
-    ) -> Result<Vec<Variant<'a, Vec<u32>>>> {
+    ) -> Result<Vec<Variant<'a, Vec<Vec<u32>>>>> {
         self.parse_variant_line_base(line, |samples, num_alts, genotype_position| {
             let samples: Vec<&str> = samples.collect();
-            let mut allele_lists = if self.groupby_sample {
-                vec![vec![0; samples.len()]; num_alts]
+            let mut allele_lists = if self.split_haplotypes {
+                vec![vec![Vec::new(); samples.len()]; num_alts]
             } else {
-                vec![vec![0; 2 * samples.len()]; num_alts]
+                vec![vec![vec![0; 1]; samples.len()]; num_alts]
             };
             samples.into_iter().enumerate().for_each(|(idx, sample)| {
                 let sample_genotype = sample
                     .split(":")
                     .nth(genotype_position)
                     .expect("Sample needs a genotype");
-                if self.groupby_sample {
+                if !self.split_haplotypes {
+                    sample_genotype
+                        .split(&['|', '/'])
+                        .filter_map(|x| {
+                            if x == "." || x == "0" {
+                                None
+                            } else {
+                                Some(x.parse::<usize>().expect("Allele is integer"))
+                            }
+                        })
+                        .unique()
+                        .for_each(|x| {
+                            allele_lists[x - 1][idx][0] = 1;
+                        });
+                } else {
                     sample_genotype.split(&['|', '/']).for_each(|x| {
-                        if x != "." {
-                            let value = x.parse::<usize>().expect("Allele is integer");
-                            if value > 0 {
-                                allele_lists[value - 1][idx] = 1;
+                        for i in 0..num_alts {
+                            if x == "." {
+                                allele_lists[i][idx].push(0);
+                            } else {
+                                let value = x.parse::<usize>().expect("Allele is integer");
+                                if (i + 1) == value {
+                                    allele_lists[i][idx].push(1);
+                                } else {
+                                    allele_lists[i][idx].push(0);
+                                }
                             }
                         }
                     });
-                } else {
-                    sample_genotype.split(&['|', '/']).enumerate().for_each(
-                        |(haplotype_idx, x)| {
-                            if x != "." {
-                                let value = x.parse::<usize>().expect("Allele is integer");
-                                if value > 0 {
-                                    allele_lists[value - 1][2 * idx + haplotype_idx] = 1;
-                                }
-                            }
-                        },
-                    );
                 }
             });
             allele_lists
@@ -191,7 +267,7 @@ impl VcfParser {
                     .split(":")
                     .nth(genotype_position)
                     .expect("Sample needs a genotype");
-                if self.groupby_sample {
+                if !self.split_haplotypes {
                     sample_genotype
                         .split(&['|', '/'])
                         .filter_map(|x| {
@@ -290,7 +366,7 @@ struct VcfHeader {
 }
 
 impl VcfHeader {
-    fn parse<I, S>(lines: &mut I, groupby_samples: bool) -> Result<Self>
+    fn parse<I, S>(lines: &mut I) -> Result<Self>
     where
         I: Iterator<Item = S>,
         S: AsRef<str>,
@@ -303,15 +379,7 @@ impl VcfHeader {
                 continue;
             } else if line.starts_with("#CHROM") {
                 let samples: Vec<&str> = line.split("\t").skip(9).collect();
-                if groupby_samples {
-                    header.paths = samples.into_iter().map(|x| x.to_string()).collect();
-                } else {
-                    // Each sample results in two names: first and second haplotype
-                    header.paths = samples
-                        .into_iter()
-                        .flat_map(|x| [format!("{x}#1"), format!("{x}#2")])
-                        .collect();
-                }
+                header.paths = samples.into_iter().map(|x| x.to_string()).collect();
                 break;
             }
         }
@@ -368,17 +436,10 @@ mod tests {
 #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNA00001\tNA00002\tNA00003";
 
     #[test]
-    fn test_vcf_header_sample() {
+    fn test_vcf_header() {
         let mut header_lines = VCF_HEADER.lines();
-        let vcf_header = VcfHeader::parse(&mut header_lines, true).unwrap();
+        let vcf_header = VcfHeader::parse(&mut header_lines).unwrap();
         assert_eq!(vcf_header.paths.len(), 3);
-    }
-
-    #[test]
-    fn test_vcf_header_haplotype() {
-        let mut header_lines = VCF_HEADER.lines();
-        let vcf_header = VcfHeader::parse(&mut header_lines, false).unwrap();
-        assert_eq!(vcf_header.paths.len(), 6);
     }
 
     #[test]

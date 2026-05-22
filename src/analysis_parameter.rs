@@ -36,7 +36,7 @@ pub enum FileRun {
     Vcf {
         file: String,
         #[serde(default)]
-        group_by_sample: bool,
+        split_haplotypes: bool,
         #[serde(default)]
         count_type: VcfCountType,
         analyses: Vec<AnalysisParameter>,

@@ -118,7 +118,9 @@ impl Similarity {
         log::info!("Done calculating distances");
 
         let method = self.cluster_method.to_kodama();
+        log::info!("Done getting cluster method");
         let dend = linkage(&mut distances, table.len(), method);
+        log::info!("Done with dendrogram");
         let order = get_order_from_dendrogram(&dend);
 
         log::info!("Done clustering");

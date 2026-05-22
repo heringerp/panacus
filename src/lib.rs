@@ -424,11 +424,11 @@ fn get_file_parser(
         }
         FileRun::Vcf {
             file,
-            group_by_sample,
+            split_haplotypes,
             count_type,
             analyses,
         } => Ok((
-            Box::new(VcfParser::new(&file, count_type, group_by_sample)?),
+            Box::new(VcfParser::new(&file, count_type, split_haplotypes)?),
             analyses,
         )),
     }
