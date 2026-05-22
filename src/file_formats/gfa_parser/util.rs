@@ -884,8 +884,7 @@ mod tests {
         let end = it
             .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
             .unwrap();
-        let graph_storage =
-            GraphStorage::from_gfa("tests/test_files/t_groups.gfa", true, CountType::Node);
+        let graph_storage = GraphStorage::from_gfa("tests/test_files/t_groups.gfa", true);
         let exp = vec![
             (ItemId(1), Orientation::Forward),
             (ItemId(3), Orientation::Forward),
@@ -911,8 +910,7 @@ mod tests {
         let end = it
             .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
             .unwrap();
-        let graph_storage =
-            GraphStorage::from_gfa("tests/test_files/t_groups.gfa", true, CountType::Node);
+        let graph_storage = GraphStorage::from_gfa("tests/test_files/t_groups.gfa", true);
         let exp = vec![
             (ItemId(1), Orientation::Forward),
             (ItemId(3), Orientation::Forward),

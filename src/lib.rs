@@ -30,6 +30,7 @@ use crate::analyses::{HistBasedAnalysis, MatrixBasedAnalysis};
 use crate::analysis_parameter::{FileRun, Grouping};
 use crate::coverage_matrix::CoverageMatrix;
 use crate::file_formats::gfa_parser::{GfaParser, GraphMaskParameters};
+use crate::file_formats::vcf_parser::VcfParser;
 use crate::file_formats::FileFormatParser;
 use crate::hist::Hist;
 
@@ -421,6 +422,15 @@ fn get_file_parser(
                 analyses,
             ))
         }
+        FileRun::Vcf {
+            file,
+            group_by_sample,
+            count_type,
+            analyses,
+        } => Ok((
+            Box::new(VcfParser::new(&file, count_type, group_by_sample)?),
+            analyses,
+        )),
     }
 }
 

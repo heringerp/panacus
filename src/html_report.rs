@@ -747,7 +747,7 @@ impl ReportItem {
                 for (_i, bin) in bins.into_iter().enumerate() {
                     js_object.push_str(&format!("[",));
                     for node in bin.content.iter().take(threshold) {
-                        js_object.push_str(&format!("{},", node,));
+                        js_object.push_str(&format!("'{}',", node,));
                     }
                     if threshold < bin.content.len() {
                         js_object.push_str("-1, ");
@@ -906,7 +906,7 @@ impl Bin {
             .map(|(_i, c, _l)| *c)
             .max()
             .expect("At least one point");
-        let max_length = points.iter().map(|(_i, _c, l)| *l).fold(0. / 0., f64::max);
+        let max_length = points.iter().map(|(_i, _c, l)| *l).fold(0.04, f64::max);
         let dx = max_coverage as f64 / (nx - 1) as f64;
         let _t = dx as f64 / 3f64.sqrt();
         let dy = max_length / (ny - 1) as f64;

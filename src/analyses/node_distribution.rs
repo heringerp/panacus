@@ -54,7 +54,7 @@ impl MatrixBasedAnalysis for NodeDistribution {
             run_id: matrix.get_run_id().to_owned(),
             countable: CountType::Node.to_string(),
             items: vec![ReportItem::Hexbin {
-                id: format!("{id_prefix}-{}", CountType::Node),
+                id: format!("{id_prefix}-{}", matrix.get_feature_type()),
                 bins: self.bins.clone(),
                 threshold: self.threshold,
             }],
@@ -71,10 +71,11 @@ impl NodeDistribution {
             itertools::MinMaxResult::MinMax(min, max) => (min, max),
             _ => panic!("Node distribution needs to have at least two countables"),
         };
+        // TODO What about this log? Can be very dangerous, since there are variants of length 0
         let node_lens = &matrix
             .get_feature_lengths()
             .iter()
-            .map(|x| (*x as f64).log10())
+            .map(|x| if *x > 0 { (*x as f64).log10() } else { -1.0 })
             .collect::<Vec<f64>>();
         let (lens_min, lens_max) = match node_lens.iter().minmax() {
             itertools::MinMaxResult::MinMax(min, max) => (min, max),

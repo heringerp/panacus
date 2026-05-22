@@ -62,6 +62,7 @@ impl Info {
     }
 }
 
+#[derive(Debug)]
 pub struct FileInfo {
     infos: Vec<(String, String)>,
     filetype: String,

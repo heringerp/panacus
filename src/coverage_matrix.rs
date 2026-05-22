@@ -7,6 +7,7 @@ use crate::{
     util::{ItemTable, Threshold},
 };
 
+#[derive(Debug)]
 pub struct CoverageMatrix {
     count_of_features: usize,
     feature_lengths: Vec<usize>,
@@ -40,6 +41,14 @@ impl CoverageMatrix {
             run_name,
             file_info,
         }
+    }
+
+    pub fn set_path_names(&mut self, path_names: Vec<String>) {
+        self.path_names = path_names;
+    }
+
+    pub fn set_file_info(&mut self, file_info: FileInfo) {
+        self.file_info = file_info;
     }
 
     /// Calculates the histogram from the matrix. This should
@@ -89,11 +98,15 @@ impl CoverageMatrix {
 
     pub fn insert_feature(
         &mut self,
+        feature_name: String,
         feature_length: usize,
         feature_position: usize,
         feature: Vec<u32>,
     ) {
+        // Check if we have the same number of entries as we have paths
+        assert_eq!(feature.len(), self.path_names.len());
         self.count_of_features += 1;
+        self.feature_names.push(feature_name);
         self.feature_lengths.push(feature_length);
         self.feature_positions.push(feature_position);
         self.matrix.insert_row(feature);

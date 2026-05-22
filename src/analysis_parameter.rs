@@ -16,6 +16,7 @@ use crate::analyses::section_growth::SectionGrowth;
 use crate::analyses::similarity::Similarity;
 use crate::analyses::table::Table;
 use crate::analyses::Analysis;
+use crate::file_formats::vcf_parser::VcfCountType;
 use crate::util::CountType;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
@@ -27,8 +28,17 @@ pub enum FileRun {
         #[serde(default)]
         exclude: String,
         grouping: Option<Grouping>,
+        #[serde(default)]
         nice: bool,
         count_type: CountType,
+        analyses: Vec<AnalysisParameter>,
+    },
+    Vcf {
+        file: String,
+        #[serde(default)]
+        group_by_sample: bool,
+        #[serde(default)]
+        count_type: VcfCountType,
         analyses: Vec<AnalysisParameter>,
     },
 }

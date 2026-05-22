@@ -130,7 +130,8 @@ impl SparseMatrix {
                 number_of_inserted += 1;
             }
         }
-        self.r.push(number_of_inserted)
+        self.r
+            .push(number_of_inserted + self.r.last().expect("r has at least an initial zero"));
     }
 }
 
