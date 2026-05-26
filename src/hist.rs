@@ -47,7 +47,7 @@ impl Hist {
     }
 
     /// Gets the number of features that are currently inserted into
-    /// the histogram.
+    /// the histogram (this is multiplied by the length of the feature)
     pub fn get_number_of_features(&self) -> usize {
         self.count_of_features
     }
