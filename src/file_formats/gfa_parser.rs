@@ -6,6 +6,7 @@ use crate::{
     coverage_matrix::CoverageMatrix,
     file_formats::{
         gfa_parser::{
+            grammar::Grammar,
             graph::GraphStorage,
             util::{parse_path_seq_update_tables, parse_walk_seq_update_tables, update_tables},
         },
@@ -31,6 +32,7 @@ use crate::io::bufreader_from_compressed_gfa;
 use crate::util::{intersects, is_contained, ActiveTable, IntervalContainer, ItemTable};
 
 mod abacus;
+mod grammar;
 mod graph;
 mod hist;
 mod sparse_matrix;
@@ -56,6 +58,7 @@ pub struct GfaParser {
     // Generated
     graph_storage: GraphStorage,
     graph_mask: GraphMask,
+    grammar: Grammar,
 }
 
 impl FileFormatParser for GfaParser {
@@ -117,7 +120,11 @@ impl GfaParser {
         graph_mask_parameters: GraphMaskParameters,
         is_nice: bool,
     ) -> Result<Self, Error> {
+        let mut grammar = Grammar::default();
         let graph_storage = GraphStorage::from_gfa(filename, is_nice);
+        if !graph_storage.node2rule_id.is_empty() {
+            grammar.parse_gfa(filename, &graph_storage);
+        }
         let graph_mask = GraphMask::from_datamgr(&graph_mask_parameters, &graph_storage)?;
         Ok(Self {
             filename: filename.to_owned(),
@@ -125,6 +132,7 @@ impl GfaParser {
             graph_mask_parameters,
             graph_storage,
             graph_mask,
+            grammar,
         })
     }
 
@@ -599,6 +607,7 @@ impl GfaParser {
                         b'W' => parse_walk_seq_update_tables(
                             buf_path_seg,
                             graph_storage,
+                            &self.grammar,
                             &mut item_table,
                             ex.as_mut(),
                             num_path,

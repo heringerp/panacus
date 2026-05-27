@@ -167,6 +167,7 @@ pub fn get_extremities(node_dna: &[u8], k: usize) -> (u64, u64) {
 #[derive(Debug, Clone)]
 pub struct GraphStorage {
     pub node2id: HashMap<Vec<u8>, ItemId>,
+    pub node2rule_id: HashMap<ItemId, usize>,
     is_nice: bool,
     pub node_lens: Vec<u32>,
     pub edge2id: Option<HashMap<Edge, ItemId>>,
@@ -182,6 +183,7 @@ impl GraphStorage {
     pub fn from_path_segments(path_segments: Vec<PathSegment>) -> Self {
         Self {
             node2id: HashMap::new(),
+            node2rule_id: HashMap::new(),
             node_lens: Vec::new(),
             edge2id: None,
             path_segments,
@@ -193,7 +195,7 @@ impl GraphStorage {
     }
 
     pub fn from_gfa(gfa_file: &str, is_nice: bool) -> Self {
-        let (node2id, path_segments, node_lens, _extremities) =
+        let (node2id, node2rule_id, path_segments, node_lens, _extremities) =
             Self::parse_nodes_gfa(gfa_file, None);
         let index_edges: bool = true;
         let (edge2id, edge_count, degree) = if index_edges {
@@ -207,6 +209,7 @@ impl GraphStorage {
 
         Self {
             node2id,
+            node2rule_id,
             is_nice,
             node_lens,
             edge2id,
@@ -291,11 +294,13 @@ impl GraphStorage {
         k: Option<usize>,
     ) -> (
         HashMap<Vec<u8>, ItemId>,
+        HashMap<ItemId, usize>,
         Vec<PathSegment>,
         Vec<u32>,
         Option<Vec<(u64, u64)>>,
     ) {
         let mut node2id: HashMap<Vec<u8>, ItemId> = HashMap::default();
+        let mut node2rule_id: HashMap<ItemId, usize> = HashMap::default();
         let mut path_segments: Vec<PathSegment> = Vec::new();
         let mut node_lens: Vec<u32> = Vec::new();
         let mut extremities: Vec<(u64, u64)> = Vec::new();
@@ -303,6 +308,7 @@ impl GraphStorage {
         log::info!("constructing indexes for node/edge IDs, node lengths, and P/W lines..");
         node_lens.push(u32::MIN); // add empty element to node_lens to make it in sync with node_id
         let mut node_id = 1; // important: id must be > 0, otherwise counting procedure will produce errors
+        let mut meta_node_id = 0;
 
         let mut buf = vec![];
         let mut data = bufreader_from_compressed_gfa(gfa_file);
@@ -330,6 +336,22 @@ impl GraphStorage {
                 }
                 node_lens.push(offset as u32);
                 node_id += 1;
+            } else if buf[0] == b'Q' {
+                let mut iter = buf[2..].iter();
+                let offset = iter.position(|&x| x == b'\t').unwrap();
+                if node2id
+                    .insert(buf[2..offset + 2].to_vec(), ItemId(node_id))
+                    .is_some()
+                {
+                    panic!(
+                        "Meta-Segment with ID {} occurs multiple times in GFA",
+                        str::from_utf8(&buf[2..offset + 2]).unwrap()
+                    )
+                }
+                node2rule_id.insert(ItemId(node_id), meta_node_id);
+                node_lens.push(0);
+                node_id += 1;
+                meta_node_id += 1;
             } else if buf[0] == b'P' {
                 path_segments.push(Self::parse_path_segment(&buf));
             } else if buf[0] == b'W' {
@@ -349,6 +371,7 @@ impl GraphStorage {
 
         (
             node2id,
+            node2rule_id,
             path_segments,
             node_lens,
             if k.is_none() { None } else { Some(extremities) },

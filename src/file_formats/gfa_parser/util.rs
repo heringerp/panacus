@@ -10,6 +10,7 @@ use std::{
 
 use rayon::prelude::*;
 
+use crate::file_formats::gfa_parser::grammar::Grammar;
 use crate::{
     file_formats::gfa_parser::Edge,
     util::{intersects, is_contained, ActiveTable, CountType, IntervalContainer, ItemTable, Wrap},
@@ -23,6 +24,7 @@ pub fn parse_gfa_paths_walks<R: Read>(
     data: &mut BufReader<R>,
     graph_mask: &GraphMask,
     graph_storage: &GraphStorage,
+    grammar: &Grammar,
     count: &CountType,
 ) -> (
     ItemTable,
@@ -126,6 +128,7 @@ pub fn parse_gfa_paths_walks<R: Read>(
                     b'W' => parse_walk_seq_update_tables(
                         buf_path_seg,
                         graph_storage,
+                        grammar,
                         &mut item_table,
                         ex,
                         num_path,
@@ -522,6 +525,7 @@ pub fn parse_walk_seq_to_item_vec(
 pub fn parse_walk_seq_update_tables(
     data: &[u8],
     graph_storage: &GraphStorage,
+    grammar: &Grammar,
     item_table: &mut ItemTable,
     exclude_table: Option<&mut ActiveTable>,
     num_path: usize,
@@ -551,16 +555,34 @@ pub fn parse_walk_seq_update_tables(
             let sid = graph_storage
                 .get_node_id(node)
                 .unwrap_or_else(|| panic!("unknown node {}", str::from_utf8(node).unwrap()));
-            if let Ok(_) = mutex_item_table.lock() {
-                unsafe {
-                    (*items_ptr.0).push(sid.0);
-                    (&mut (*id_prefsum_ptr.0))[num_path + 1] += 1;
+            let mut sids = Vec::new();
+            if grammar.is_empty() {
+                sids.push(sid);
+            } else {
+                let mut stack = vec![sid];
+
+                while let Some(current) = stack.pop() {
+                    if let Some(&rule_idx) = graph_storage.node2rule_id.get(&current) {
+                        for (child, _) in grammar.get(rule_idx).iter().rev() {
+                            stack.push(*child);
+                        }
+                    } else {
+                        sids.push(current);
+                    }
                 }
             }
-            bp_len.fetch_add(
-                graph_storage.node_len(&sid),
-                std::sync::atomic::Ordering::SeqCst,
-            );
+            if let Ok(_) = mutex_item_table.lock() {
+                unsafe {
+                    for sid in &sids {
+                        (*items_ptr.0).push(sid.0);
+                        (&mut (*id_prefsum_ptr.0))[num_path + 1] += 1;
+                    }
+                }
+            }
+            let length_in_bp = sids
+                .iter()
+                .fold(0, |acc, e| acc + graph_storage.node_len(e));
+            bp_len.fetch_add(length_in_bp, std::sync::atomic::Ordering::SeqCst);
         });
     let bp_len = bp_len.load(std::sync::atomic::Ordering::SeqCst);
 
