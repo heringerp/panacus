@@ -139,7 +139,7 @@ pub fn parse_gfa_paths_walks<R: Read>(
             } else {
                 let sids = match buf[0] {
                     b'P' => parse_path_seq_to_item_vec(buf_path_seg, graph_storage),
-                    b'W' => parse_walk_seq_to_item_vec(buf_path_seg, graph_storage),
+                    b'W' => parse_walk_seq_to_item_vec(buf_path_seg, graph_storage, grammar),
                     _ => unreachable!(),
                 };
 
@@ -470,6 +470,7 @@ pub fn update_tables_edgecount(
 pub fn parse_walk_seq_to_item_vec(
     data: &[u8],
     graph_storage: &GraphStorage,
+    grammar: &Grammar,
 ) -> Vec<(ItemId, Orientation)> {
     // later codes assumes that data is non-empty...
     if data.is_empty() {
@@ -508,7 +509,35 @@ pub fn parse_walk_seq_to_item_vec(
                 }
                 let segment_id = get_walk_segment_id(&data[curr_pos..segment_end], graph_storage);
                 let orientation = Orientation::from_lg(data[curr_pos]);
-                segment_ids.push((segment_id, orientation));
+
+                // TODO translation
+                let mut sids = Vec::new();
+                if grammar.is_empty() {
+                    sids.push((segment_id, orientation))
+                } else {
+                    let mut stack = vec![(segment_id, orientation)];
+                    while let Some((current_node, current_orientation)) = stack.pop() {
+                        if let Some(current_id) = graph_storage.node2rule_id.get(&current_node) {
+                            match current_orientation {
+                                Orientation::Forward => {
+                                    stack.extend(grammar.get(*current_id).iter().rev());
+                                }
+                                Orientation::Backward => {
+                                    stack.extend(
+                                        grammar
+                                            .get(*current_id)
+                                            .iter()
+                                            .map(|(i, o)| (*i, o.flip())),
+                                    );
+                                }
+                            }
+                        } else {
+                            sids.push((current_node, current_orientation));
+                        }
+                    }
+                }
+
+                segment_ids.extend(sids);
                 // move curr_pos forward (after next comma)
                 curr_pos = segment_end;
             }

@@ -618,7 +618,9 @@ impl GfaParser {
                 } else {
                     let sids = match buf[0] {
                         b'P' => parse_path_seq_to_item_vec(buf_path_seg, graph_storage),
-                        b'W' => parse_walk_seq_to_item_vec(buf_path_seg, graph_storage),
+                        b'W' => {
+                            parse_walk_seq_to_item_vec(buf_path_seg, graph_storage, &self.grammar)
+                        }
                         _ => unreachable!(),
                     };
                     if paths_to_collect.iter().any(|p| path_seg.is_part_of(p)) {
