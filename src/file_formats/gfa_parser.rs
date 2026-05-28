@@ -71,7 +71,14 @@ impl FileFormatParser for GfaParser {
             self.get_run_name(),
         );
         let (abacus, _, _) = self.get_abacus_by_total();
+        // Idx should be the id inside ItemId
         for (idx, feature_coverage) in abacus.countable.iter().enumerate().skip(1) {
+            // If we look at nodes or basepairs, make sure this isn't a meta-node
+            if (self.count_type == CountType::Node || self.count_type == CountType::Bp)
+                && self.graph_storage.node2rule_id[idx] != usize::MAX
+            {
+                continue;
+            }
             if self.count_type == CountType::Bp {
                 let length = self.graph_storage.node_lens[idx];
                 hist.insert_feature_of_coverage_and_length(
@@ -249,11 +256,11 @@ impl GfaParser {
         );
         file_info.add_info(
             "Longest path in nodes",
-            (*paths_len.iter().max().unwrap()).to_string().as_str(),
+            (*paths_len.iter().max().unwrap_or(&0)).to_string().as_str(),
         );
         file_info.add_info(
             "Shortest path in nodes",
-            (*paths_len.iter().min().unwrap()).to_string().as_str(),
+            (*paths_len.iter().min().unwrap_or(&0)).to_string().as_str(),
         );
         file_info.add_info(
             "Average path length in nodes",
@@ -261,11 +268,15 @@ impl GfaParser {
         );
         file_info.add_info(
             "Longest path in bps",
-            (*paths_bp_len.iter().max().unwrap()).to_string().as_str(),
+            (*paths_bp_len.iter().max().unwrap_or(&0))
+                .to_string()
+                .as_str(),
         );
         file_info.add_info(
             "Shortest path in bps",
-            (*paths_bp_len.iter().min().unwrap()).to_string().as_str(),
+            (*paths_bp_len.iter().min().unwrap_or(&0))
+                .to_string()
+                .as_str(),
         );
         file_info.add_info(
             "Average path length in bps",
@@ -462,6 +473,20 @@ impl GfaParser {
                     }
                 }
             }
+        }
+
+        if count_type == CountType::Node || count_type == CountType::Bp {
+            let to_keep: Vec<bool> = feature_names
+                .iter()
+                .map(|x| {
+                    let item_id = graph_storage.node2id[x.as_bytes()];
+                    graph_storage.node2rule_id[item_id.0 as usize] == usize::MAX
+                })
+                .collect();
+            let mut to_keep_lengths = to_keep.iter();
+            let mut to_keep_names = to_keep.iter();
+            feature_lengths.retain(|_| *to_keep_lengths.next().unwrap());
+            feature_names.retain(|_| *to_keep_names.next().unwrap());
         }
 
         (feature_lengths, feature_names)
