@@ -1,6 +1,7 @@
 /* standard use */
 use once_cell::sync::Lazy;
 use regex::Regex;
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
@@ -97,7 +98,7 @@ impl fmt::Display for ItemId {
 pub struct Edge(pub ItemId, pub Orientation, pub ItemId, pub Orientation);
 
 impl Edge {
-    pub fn from_link(data: &[u8], node2id: &HashMap<Vec<u8>, ItemId>, canonical: bool) -> Self {
+    pub fn from_link(data: &[u8], node2id: &FxHashMap<Vec<u8>, ItemId>, canonical: bool) -> Self {
         let (start, mut iter) = match data[0] {
             b'L' => (2, data[2..].iter()),
             _ => (0, data.iter()),
@@ -166,8 +167,8 @@ pub fn get_extremities(node_dna: &[u8], k: usize) -> (u64, u64) {
 
 #[derive(Debug, Clone)]
 pub struct GraphStorage {
-    pub node2id: HashMap<Vec<u8>, ItemId>,
-    pub node2rule_id: HashMap<ItemId, usize>,
+    pub node2id: FxHashMap<Vec<u8>, ItemId>,
+    pub node2rule_id: Vec<usize>,
     is_nice: bool,
     pub node_lens: Vec<u32>,
     pub edge2id: Option<HashMap<Edge, ItemId>>,
@@ -182,8 +183,8 @@ impl GraphStorage {
     #[cfg(test)]
     pub fn from_path_segments(path_segments: Vec<PathSegment>) -> Self {
         Self {
-            node2id: HashMap::new(),
-            node2rule_id: HashMap::new(),
+            node2id: FxHashMap::default(),
+            node2rule_id: Vec::new(),
             node_lens: Vec::new(),
             edge2id: None,
             path_segments,
@@ -259,7 +260,7 @@ impl GraphStorage {
 
     pub fn parse_edge_gfa(
         gfa_file: &str,
-        node2id: &HashMap<Vec<u8>, ItemId>,
+        node2id: &FxHashMap<Vec<u8>, ItemId>,
     ) -> (HashMap<Edge, ItemId>, usize, Vec<u32>) {
         let mut edge2id = HashMap::default();
         let mut degree: Vec<u32> = vec![0; node2id.len() + 1];
@@ -293,14 +294,14 @@ impl GraphStorage {
         gfa_file: &str,
         k: Option<usize>,
     ) -> (
-        HashMap<Vec<u8>, ItemId>,
-        HashMap<ItemId, usize>,
+        FxHashMap<Vec<u8>, ItemId>,
+        Vec<usize>,
         Vec<PathSegment>,
         Vec<u32>,
         Option<Vec<(u64, u64)>>,
     ) {
-        let mut node2id: HashMap<Vec<u8>, ItemId> = HashMap::default();
-        let mut node2rule_id: HashMap<ItemId, usize> = HashMap::default();
+        let mut node2id: FxHashMap<Vec<u8>, ItemId> = FxHashMap::default();
+        let mut node2rule_id: Vec<usize> = vec![usize::MAX];
         let mut path_segments: Vec<PathSegment> = Vec::new();
         let mut node_lens: Vec<u32> = Vec::new();
         let mut extremities: Vec<(u64, u64)> = Vec::new();
@@ -335,6 +336,7 @@ impl GraphStorage {
                     extremities.push((left, right));
                 }
                 node_lens.push(offset as u32);
+                node2rule_id.push(usize::MAX);
                 node_id += 1;
             } else if buf[0] == b'Q' {
                 let mut iter = buf[2..].iter();
@@ -348,7 +350,7 @@ impl GraphStorage {
                         str::from_utf8(&buf[2..offset + 2]).unwrap()
                     )
                 }
-                node2rule_id.insert(ItemId(node_id), meta_node_id);
+                node2rule_id.push(meta_node_id);
                 node_lens.push(0);
                 node_id += 1;
                 meta_node_id += 1;

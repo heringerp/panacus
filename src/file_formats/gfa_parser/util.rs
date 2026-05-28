@@ -517,17 +517,15 @@ pub fn parse_walk_seq_to_item_vec(
                 } else {
                     let mut stack = vec![(segment_id, orientation)];
                     while let Some((current_node, current_orientation)) = stack.pop() {
-                        if let Some(current_id) = graph_storage.node2rule_id.get(&current_node) {
+                        let current_id = graph_storage.node2rule_id[current_node.0 as usize];
+                        if current_id != usize::MAX {
                             match current_orientation {
                                 Orientation::Forward => {
-                                    stack.extend(grammar.get(*current_id).iter().rev());
+                                    stack.extend(grammar.get(current_id).iter().rev());
                                 }
                                 Orientation::Backward => {
                                     stack.extend(
-                                        grammar
-                                            .get(*current_id)
-                                            .iter()
-                                            .map(|(i, o)| (*i, o.flip())),
+                                        grammar.get(current_id).iter().map(|(i, o)| (*i, o.flip())),
                                     );
                                 }
                             }
@@ -591,7 +589,8 @@ pub fn parse_walk_seq_update_tables(
                 let mut stack = vec![sid];
 
                 while let Some(current) = stack.pop() {
-                    if let Some(&rule_idx) = graph_storage.node2rule_id.get(&current) {
+                    let rule_idx = graph_storage.node2rule_id[current.0 as usize];
+                    if rule_idx != usize::MAX {
                         for (child, _) in grammar.get(rule_idx).iter().rev() {
                             stack.push(*child);
                         }

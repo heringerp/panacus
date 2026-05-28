@@ -64,7 +64,7 @@ impl Grammar {
                     .copied()
                     .collect();
                 let node_id = graph_storage.node2id[&name];
-                let rule_id = graph_storage.node2rule_id[&node_id];
+                let rule_id = graph_storage.node2rule_id[node_id.0 as usize];
                 let content = fields.next().expect("Q line has content");
                 let nodes: Vec<(ItemId, Orientation)> = RE_WALK
                     .captures_iter(content)
