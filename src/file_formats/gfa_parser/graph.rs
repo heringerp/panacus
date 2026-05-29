@@ -1,7 +1,7 @@
 /* standard use */
 use once_cell::sync::Lazy;
 use regex::Regex;
-use rustc_hash::FxHashMap;
+// use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
@@ -101,7 +101,7 @@ impl fmt::Display for ItemId {
 pub struct Edge(pub ItemId, pub Orientation, pub ItemId, pub Orientation);
 
 impl Edge {
-    pub fn from_link(data: &[u8], node2id: &FxHashMap<Vec<u8>, ItemId>, canonical: bool) -> Self {
+    pub fn from_link(data: &[u8], node2id: &HashMap<Vec<u8>, ItemId>, canonical: bool) -> Self {
         let (start, mut iter) = match data[0] {
             b'L' => (2, data[2..].iter()),
             _ => (0, data.iter()),
@@ -170,7 +170,7 @@ pub fn get_extremities(node_dna: &[u8], k: usize) -> (u64, u64) {
 
 #[derive(Debug, Clone)]
 pub struct GraphStorage {
-    pub node2id: FxHashMap<Vec<u8>, ItemId>,
+    pub node2id: HashMap<Vec<u8>, ItemId>,
     pub node2rule_id: Vec<usize>,
     is_nice: bool,
     pub node_lens: Vec<u32>,
@@ -186,7 +186,7 @@ impl GraphStorage {
     #[cfg(test)]
     pub fn from_path_segments(path_segments: Vec<PathSegment>) -> Self {
         Self {
-            node2id: FxHashMap::default(),
+            node2id: HashMap::default(),
             node2rule_id: Vec::new(),
             node_lens: Vec::new(),
             edge2id: None,
@@ -271,7 +271,7 @@ impl GraphStorage {
 
     pub fn parse_edge_gfa(
         gfa_file: &str,
-        node2id: &FxHashMap<Vec<u8>, ItemId>,
+        node2id: &HashMap<Vec<u8>, ItemId>,
     ) -> (HashMap<Edge, ItemId>, usize, Vec<u32>) {
         let mut edge2id = HashMap::default();
         let mut degree: Vec<u32> = vec![0; node2id.len() + 1];
@@ -305,7 +305,7 @@ impl GraphStorage {
         gfa_file: &str,
         k: Option<usize>,
     ) -> (
-        FxHashMap<Vec<u8>, ItemId>,
+        HashMap<Vec<u8>, ItemId>,
         Vec<usize>,
         Vec<PathSegment>,
         Vec<u32>,
@@ -323,8 +323,8 @@ impl GraphStorage {
         }
         log::info!("Found {} nodes", count_nodes);
 
-        let mut node2id: FxHashMap<Vec<u8>, ItemId> =
-            FxHashMap::with_capacity_and_hasher(2 * count_nodes, Default::default());
+        let mut node2id: HashMap<Vec<u8>, ItemId> =
+            HashMap::with_capacity_and_hasher(2 * count_nodes, Default::default());
         let mut node2rule_id: Vec<usize> = vec![usize::MAX];
         let mut path_segments: Vec<PathSegment> = Vec::new();
         let mut node_lens: Vec<u32> = Vec::new();
