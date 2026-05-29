@@ -416,8 +416,14 @@ impl AbacusByTotal {
         grammar: &Grammar,
         count_type: CountType,
     ) -> (Self, HashMap<PathSegment, (u32, u32)>) {
-        let (item_table, exclude_table, subset_covered_bps, paths_len) =
-            parse_gfa_paths_walks(data, graph_mask, graph_storage, grammar, &count_type);
+        let (item_table, exclude_table, subset_covered_bps, paths_len, _) = parse_gfa_paths_walks(
+            data,
+            graph_mask,
+            graph_storage,
+            grammar,
+            &count_type,
+            &Vec::new(),
+        );
         (
             Self::item_table_to_abacus(
                 graph_mask,

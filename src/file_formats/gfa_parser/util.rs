@@ -25,11 +25,13 @@ pub fn parse_gfa_paths_walks<R: Read>(
     graph_storage: &GraphStorage,
     grammar: &Grammar,
     count: &CountType,
+    paths_to_collect: &Vec<PathSegment>,
 ) -> (
     ItemTable,
     Option<ActiveTable>,
     Option<IntervalContainer>,
     HashMap<PathSegment, (u32, u32)>,
+    HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
 ) {
     log::info!("parsing path + walk sequences");
     let mut item_table = ItemTable::new(graph_storage.path_segments.len());
@@ -37,6 +39,7 @@ pub fn parse_gfa_paths_walks<R: Read>(
     let (mut subset_covered_bps, mut exclude_table, include_map, exclude_map) =
         graph_mask.load_optional_subsetting(graph_storage, count);
 
+    let mut collected_paths: HashMap<PathSegment, Vec<(ItemId, Orientation)>> = HashMap::new();
     let mut num_path = 0;
     let complete: Vec<(usize, usize)> = vec![(0, usize::MAX)];
     let mut paths_len: HashMap<PathSegment, (u32, u32)> = HashMap::new();
@@ -142,6 +145,9 @@ pub fn parse_gfa_paths_walks<R: Read>(
                     _ => unreachable!(),
                 };
 
+                if paths_to_collect.iter().any(|p| path_seg.is_part_of(p)) {
+                    collected_paths.insert(path_seg.clone(), sids.clone());
+                }
                 match count {
                     CountType::Node | CountType::Bp => {
                         let (node_len, bp_len) = update_tables(
@@ -180,7 +186,13 @@ pub fn parse_gfa_paths_walks<R: Read>(
         count,
         duration
     );
-    (item_table, exclude_table, subset_covered_bps, paths_len)
+    (
+        item_table,
+        exclude_table,
+        subset_covered_bps,
+        paths_len,
+        collected_paths,
+    )
 }
 
 pub fn parse_path_seq_update_tables(
@@ -1005,7 +1017,7 @@ mod tests {
         let end = it
             .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
             .unwrap();
-        let graph_storage = GraphStorage::from_gfa("tests/test_files/t_groups.gfa", true);
+        let (graph_storage, _) = GraphStorage::from_gfa("tests/test_files/t_groups.gfa", true);
         let exp = vec![
             (ItemId(1), Orientation::Forward),
             (ItemId(3), Orientation::Forward),
@@ -1031,7 +1043,7 @@ mod tests {
         let end = it
             .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
             .unwrap();
-        let graph_storage = GraphStorage::from_gfa("tests/test_files/t_groups.gfa", true);
+        let (graph_storage, _) = GraphStorage::from_gfa("tests/test_files/t_groups.gfa", true);
         let exp = vec![
             (ItemId(1), Orientation::Forward),
             (ItemId(3), Orientation::Forward),

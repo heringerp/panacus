@@ -5,11 +5,7 @@ use crate::{
     analyses::info::FileInfo,
     coverage_matrix::CoverageMatrix,
     file_formats::{
-        gfa_parser::{
-            grammar::Grammar,
-            graph::GraphStorage,
-            util::{parse_path_seq_update_tables, parse_walk_seq_update_tables, update_tables},
-        },
+        gfa_parser::{grammar::Grammar, graph::GraphStorage, util::parse_gfa_paths_walks},
         FileFormatParser,
     },
     hist::Hist,
@@ -18,18 +14,13 @@ use crate::{
     },
 };
 
-use std::time::Instant;
+use std::collections::HashSet;
 use std::{collections::HashMap, str};
-use std::{collections::HashSet, io::BufRead};
 
 pub use abacus::AbacusByTotal;
-use util::{
-    parse_path_identifier, parse_path_seq_to_item_vec, parse_walk_identifier,
-    parse_walk_seq_to_item_vec, update_tables_edgecount,
-};
 
 use crate::io::bufreader_from_compressed_gfa;
-use crate::util::{intersects, is_contained, ActiveTable, IntervalContainer, ItemTable};
+use crate::util::{ActiveTable, IntervalContainer, ItemTable};
 
 mod abacus;
 mod grammar;
@@ -339,8 +330,16 @@ impl GfaParser {
         HashMap<PathSegment, (u32, u32)>,
     )> {
         log::info!("parsing path + walk sequences");
+        let mut data = bufreader_from_compressed_gfa(&self.filename);
         let (item_table, exclude_table, subset_covered_bps, paths_len, _collected_paths) =
-            self.parse_paths_walks(&count, paths_to_collect);
+            parse_gfa_paths_walks(
+                &mut data,
+                graph_mask,
+                graph_storage,
+                &self.grammar,
+                &count,
+                paths_to_collect,
+            );
 
         let mut path_order: Vec<(ItemIdSize, GroupSize)> = Vec::new();
         let mut groups: Vec<String> = Vec::new();
@@ -553,205 +552,153 @@ impl GfaParser {
         )
     }
 
-    fn parse_paths_walks(
-        &self,
-        count_type: &CountType,
-        paths_to_collect: &Vec<PathSegment>,
-    ) -> (
-        ItemTable,
-        Option<ActiveTable>,
-        Option<IntervalContainer>,
-        HashMap<PathSegment, (u32, u32)>,
-        HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
-    ) {
-        log::info!("parsing path + walk sequences");
-        log::info!("collecting: {:?}", paths_to_collect);
-        let mut data = bufreader_from_compressed_gfa(&self.filename);
-        let graph_storage = &self.graph_storage;
-        let graph_mask = &self.graph_mask;
-        let mut item_table = ItemTable::new(graph_storage.path_segments.len());
+    // fn parse_paths_walks(
+    //     &self,
+    //     count_type: &CountType,
+    //     paths_to_collect: &Vec<PathSegment>,
+    // ) -> (
+    //     ItemTable,
+    //     Option<ActiveTable>,
+    //     Option<IntervalContainer>,
+    //     HashMap<PathSegment, (u32, u32)>,
+    //     HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
+    // ) {
+    //     log::info!("parsing path + walk sequences");
+    //     log::info!("collecting: {:?}", paths_to_collect);
+    //     let mut data = bufreader_from_compressed_gfa(&self.filename);
+    //     let graph_storage = &self.graph_storage;
+    //     let graph_mask = &self.graph_mask;
+    //     let mut item_table = ItemTable::new(graph_storage.path_segments.len());
 
-        let (mut subset_covered_bps, mut exclude_table, include_map, exclude_map) =
-            graph_mask.load_optional_subsetting(graph_storage, count_type);
+    //     let (mut subset_covered_bps, mut exclude_table, include_map, exclude_map) =
+    //         graph_mask.load_optional_subsetting(graph_storage, count_type);
 
-        let mut collected_paths: HashMap<PathSegment, Vec<(ItemId, Orientation)>> = HashMap::new();
+    //     let mut collected_paths: HashMap<PathSegment, Vec<(ItemId, Orientation)>> = HashMap::new();
+    //     let mut num_path = 0;
+    //     let complete: Vec<(usize, usize)> = vec![(0, usize::MAX)];
+    //     let mut paths_len: HashMap<PathSegment, (u32, u32)> = HashMap::new();
 
-        let mut fully_included = vec![false; graph_storage.node_count + 1];
+    //     // Used to check whether a node was already fully included in a previous path
+    //     let mut fully_included = vec![false; graph_storage.node_count + 1];
 
-        let mut num_path = 0;
-        let complete: Vec<(usize, usize)> = vec![(0, usize::MAX)];
-        let mut paths_len: HashMap<PathSegment, (u32, u32)> = HashMap::new();
+    //     let mut buf = vec![];
+    //     let timer = Instant::now();
+    //     while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
+    //         if buf[0] == b'P' || buf[0] == b'W' {
+    //             let (path_seg, buf_path_seg) = match buf[0] {
+    //                 b'P' => parse_path_identifier(&buf),
+    //                 b'W' => parse_walk_identifier(&buf),
+    //                 _ => unreachable!(),
+    //             };
 
-        let mut buf = vec![];
-        let timer = Instant::now();
-        while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
-            if buf[0] == b'P' || buf[0] == b'W' {
-                let (path_seg, buf_path_seg) = match buf[0] {
-                    b'P' => parse_path_identifier(&buf),
-                    b'W' => parse_walk_identifier(&buf),
-                    _ => unreachable!(),
-                };
+    //             log::debug!("processing path {}", &path_seg);
 
-                log::debug!("processing path {}", &path_seg);
+    //             let include_coords =
+    //                 get_include_coords(graph_mask, &complete, &include_map, &path_seg);
+    //             let exclude_coords = get_exclude_maps(graph_mask, &exclude_map, &path_seg);
 
-                let include_coords =
-                    get_include_coords(graph_mask, &complete, &include_map, &path_seg);
-                let exclude_coords = get_exclude_maps(graph_mask, &exclude_map, &path_seg);
+    //             let (start, end) = path_seg.coords().unwrap_or((0, usize::MAX));
 
-                let (start, end) = path_seg.coords().unwrap_or((0, usize::MAX));
+    //             // do not process the path sequence if path is neither part of subset nor exclude
+    //             if graph_mask.include_coords.is_some()
+    //                 && !intersects(include_coords, &(start, end))
+    //                 && !intersects(exclude_coords, &(start, end))
+    //             {
+    //                 log::debug!("path {} does not intersect with subset coordinates {:?} nor with exclude coordinates {:?} and therefore is skipped from processing", &path_seg, &include_coords, &exclude_coords);
+    //                 skip_path(&mut item_table, &mut num_path, &mut buf);
+    //                 continue;
+    //             }
 
-                // do not process the path sequence if path is neither part of subset nor exclude
-                if graph_mask.include_coords.is_some()
-                    && !intersects(include_coords, &(start, end))
-                    && !intersects(exclude_coords, &(start, end))
-                {
-                    log::debug!("path {} does not intersect with subset coordinates {:?} nor with exclude coordinates {:?} and therefore is skipped from processing", &path_seg, &include_coords, &exclude_coords);
-                    skip_path(&mut item_table, &mut num_path, &mut buf);
-                    continue;
-                }
+    //             if *count_type != CountType::Edge
+    //                 && (graph_mask.include_coords.is_none()
+    //                     || is_contained(include_coords, &(start, end)))
+    //                 && (graph_mask.exclude_coords.is_none()
+    //                     || is_contained(exclude_coords, &(start, end)))
+    //             {
+    //                 log::debug!("path {} is fully contained within subset coordinates {:?} and is eligible for full parallel processing", path_seg, include_coords);
+    //                 let mut none = None;
+    //                 let ex: &mut Option<ActiveTable> = if exclude_coords.is_empty() {
+    //                     &mut none
+    //                 } else {
+    //                     &mut exclude_table
+    //                 };
+    //                 let (num_added_nodes, bp_len) = match buf[0] {
+    //                     b'P' => parse_path_seq_update_tables(
+    //                         buf_path_seg,
+    //                         graph_storage,
+    //                         &mut item_table,
+    //                         ex.as_mut(),
+    //                         num_path,
+    //                     ),
+    //                     b'W' => parse_walk_seq_update_tables(
+    //                         buf_path_seg,
+    //                         graph_storage,
+    //                         &self.grammar,
+    //                         &mut item_table,
+    //                         ex.as_mut(),
+    //                         num_path,
+    //                     ),
+    //                     _ => unreachable!(),
+    //                 };
+    //                 paths_len.insert(path_seg.clone(), (num_added_nodes, bp_len));
+    //             } else {
+    //                 let sids = match buf[0] {
+    //                     b'P' => parse_path_seq_to_item_vec(buf_path_seg, graph_storage),
+    //                     b'W' => {
+    //                         parse_walk_seq_to_item_vec(buf_path_seg, graph_storage, &self.grammar)
+    //                     }
+    //                     _ => unreachable!(),
+    //                 };
+    //                 if paths_to_collect.iter().any(|p| path_seg.is_part_of(p)) {
+    //                     collected_paths.insert(path_seg.clone(), sids.clone());
+    //                 }
+    //                 match count_type {
+    //                     CountType::Node | CountType::Bp => {
+    //                         let (node_len, bp_len) = update_tables(
+    //                             &mut item_table,
+    //                             &mut subset_covered_bps.as_mut(),
+    //                             &mut fully_included,
+    //                             &mut exclude_table.as_mut(),
+    //                             num_path,
+    //                             graph_storage,
+    //                             sids,
+    //                             include_coords,
+    //                             exclude_coords,
+    //                             start,
+    //                         );
+    //                         paths_len.insert(path_seg.clone(), (node_len as u32, bp_len as u32));
+    //                     }
+    //                     CountType::Edge => update_tables_edgecount(
+    //                         &mut item_table,
+    //                         &mut exclude_table.as_mut(),
+    //                         num_path,
+    //                         graph_storage,
+    //                         sids,
+    //                         include_coords,
+    //                         exclude_coords,
+    //                         start,
+    //                     ),
+    //                 };
+    //             }
+    //             num_path += 1;
+    //         }
+    //         buf.clear();
+    //     }
+    //     let duration = timer.elapsed();
+    //     log::info!(
+    //         "func done; count: {:?}; time elapsed: {:?}",
+    //         count_type,
+    //         duration
+    //     );
 
-                if *count_type != CountType::Edge
-                    && (graph_mask.include_coords.is_none()
-                        || is_contained(include_coords, &(start, end)))
-                    && (graph_mask.exclude_coords.is_none()
-                        || is_contained(exclude_coords, &(start, end)))
-                {
-                    log::debug!("path {} is fully contained within subset coordinates {:?} and is eligible for full parallel processing", path_seg, include_coords);
-                    let mut none = None;
-                    let ex: &mut Option<ActiveTable> = if exclude_coords.is_empty() {
-                        &mut none
-                    } else {
-                        &mut exclude_table
-                    };
-                    let (num_added_nodes, bp_len) = match buf[0] {
-                        b'P' => parse_path_seq_update_tables(
-                            buf_path_seg,
-                            graph_storage,
-                            &mut item_table,
-                            ex.as_mut(),
-                            num_path,
-                        ),
-                        b'W' => parse_walk_seq_update_tables(
-                            buf_path_seg,
-                            graph_storage,
-                            &self.grammar,
-                            &mut item_table,
-                            ex.as_mut(),
-                            num_path,
-                        ),
-                        _ => unreachable!(),
-                    };
-                    paths_len.insert(path_seg.clone(), (num_added_nodes, bp_len));
-                } else {
-                    let sids = match buf[0] {
-                        b'P' => parse_path_seq_to_item_vec(buf_path_seg, graph_storage),
-                        b'W' => {
-                            parse_walk_seq_to_item_vec(buf_path_seg, graph_storage, &self.grammar)
-                        }
-                        _ => unreachable!(),
-                    };
-                    if paths_to_collect.iter().any(|p| path_seg.is_part_of(p)) {
-                        collected_paths.insert(path_seg.clone(), sids.clone());
-                    }
-                    match count_type {
-                        CountType::Node | CountType::Bp => {
-                            let (node_len, bp_len) = update_tables(
-                                &mut item_table,
-                                &mut subset_covered_bps.as_mut(),
-                                &mut fully_included,
-                                &mut exclude_table.as_mut(),
-                                num_path,
-                                graph_storage,
-                                sids,
-                                include_coords,
-                                exclude_coords,
-                                start,
-                            );
-                            paths_len.insert(path_seg.clone(), (node_len as u32, bp_len as u32));
-                        }
-                        CountType::Edge => update_tables_edgecount(
-                            &mut item_table,
-                            &mut exclude_table.as_mut(),
-                            num_path,
-                            graph_storage,
-                            sids,
-                            include_coords,
-                            exclude_coords,
-                            start,
-                        ),
-                    };
-                }
-                num_path += 1;
-            }
-            buf.clear();
-        }
-        let duration = timer.elapsed();
-        log::info!(
-            "func done; count: {:?}; time elapsed: {:?}",
-            count_type,
-            duration
-        );
-
-        (
-            item_table,
-            exclude_table,
-            subset_covered_bps,
-            paths_len,
-            collected_paths,
-        )
-    }
-}
-
-fn get_exclude_maps<'a>(
-    graph_mask: &GraphMask,
-    exclude_map: &'a HashMap<String, Vec<(usize, usize)>>,
-    path_seg: &PathSegment,
-) -> &'a [(usize, usize)] {
-    let exclude_coords = if graph_mask.exclude_coords.is_none() {
-        &[]
-    } else {
-        match exclude_map.get(&path_seg.id()) {
-            None => &[],
-            Some(coords) => {
-                log::debug!(
-                    "found exclude coords {:?} for path segment {}",
-                    &coords[..],
-                    &path_seg.id()
-                );
-                &coords[..]
-            }
-        }
-    };
-    exclude_coords
-}
-
-fn get_include_coords<'a>(
-    graph_mask: &GraphMask,
-    complete: &'a Vec<(usize, usize)>,
-    include_map: &'a HashMap<String, Vec<(usize, usize)>>,
-    path_seg: &PathSegment,
-) -> &'a [(usize, usize)] {
-    if graph_mask.include_coords.is_none() {
-        complete
-    } else {
-        match include_map.get(&path_seg.id()) {
-            None => &[],
-            Some(coords) => {
-                log::debug!(
-                    "found include coords {:?} for path segment {}",
-                    &coords[..],
-                    path_seg.id()
-                );
-                &coords[..]
-            }
-        }
-    }
-}
-
-fn skip_path(item_table: &mut ItemTable, num_path: &mut usize, buf: &mut Vec<u8>) {
-    item_table.id_prefsum[*num_path + 1] += item_table.id_prefsum[*num_path];
-    *num_path += 1;
-    buf.clear();
+    //     (
+    //         item_table,
+    //         exclude_table,
+    //         subset_covered_bps,
+    //         paths_len,
+    //         collected_paths,
+    //     )
+    // }
 }
 
 fn connected_components(edge2id: &HashMap<Edge, ItemId>, nodes: &Vec<ItemId>) -> Vec<u32> {
