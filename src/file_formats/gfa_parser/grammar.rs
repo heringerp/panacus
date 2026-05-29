@@ -50,6 +50,10 @@ impl Grammar {
         self.rule_texts.is_empty()
     }
 
+    pub fn len(&self) -> usize {
+        self.rules.len() - 1
+    }
+
     fn parse_buffer(&mut self, buf: impl BufRead, graph_storage: &GraphStorage) {
         let lines = buf.lines().map(|l| l.expect("Failed to read line"));
 
@@ -63,7 +67,7 @@ impl Grammar {
                     .iter()
                     .copied()
                     .collect();
-                let node_id = graph_storage.node2id[&name];
+                let node_id = graph_storage.get_node_id(&name).unwrap();
                 let rule_id = graph_storage.node2rule_id[node_id.0 as usize];
                 let content = fields.next().expect("Q line has content");
                 let nodes: Vec<(ItemId, Orientation)> = RE_WALK
@@ -71,7 +75,7 @@ impl Grammar {
                     .map(|m| {
                         let orientation = Orientation::from_lg(m[1].bytes().nth(0).unwrap() as u8);
                         let node: Vec<u8> = m[2].bytes().collect();
-                        let node = graph_storage.node2id[&node];
+                        let node = graph_storage.get_node_id(&node).unwrap();
                         (node, orientation)
                     })
                     .collect();

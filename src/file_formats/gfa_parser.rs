@@ -89,6 +89,8 @@ impl FileFormatParser for GfaParser {
                 hist.insert_feature_of_coverage(*feature_coverage as usize);
             }
         }
+        let call_count = self.graph_storage.get_call_count();
+        log::info!("Called get_node_id {} times", call_count);
         hist
     }
 
@@ -131,6 +133,7 @@ impl GfaParser {
         let (graph_storage, has_meta_node) = GraphStorage::from_gfa(filename, is_nice);
         if has_meta_node {
             grammar.parse_gfa(filename, &graph_storage);
+            log::info!("found {} rules", grammar.len());
         }
         let graph_mask = GraphMask::from_datamgr(&graph_mask_parameters, &graph_storage)?;
         Ok(Self {
@@ -478,7 +481,7 @@ impl GfaParser {
             let to_keep: Vec<bool> = feature_names
                 .iter()
                 .map(|x| {
-                    let item_id = graph_storage.node2id[x.as_bytes()];
+                    let item_id = graph_storage.get_node_id(x.as_bytes()).unwrap();
                     graph_storage.node2rule_id[item_id.0 as usize] == usize::MAX
                 })
                 .collect();

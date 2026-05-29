@@ -328,6 +328,7 @@ fn get_walk_segment_ids(
     chunk_size: usize,
 ) -> (Vec<ItemId>, u32) {
     let (segment_ids, bp_lens): (Vec<_>, Vec<_>) = (0..end)
+        .into_par_iter()
         .step_by(chunk_size)
         .map(|chunk_start| {
             let chunk_end = *[end, chunk_start + chunk_size].iter().min().unwrap();

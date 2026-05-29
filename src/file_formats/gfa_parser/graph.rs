@@ -7,6 +7,7 @@ use std::fmt;
 use std::hash::Hash;
 use std::io::BufRead;
 use std::str::{self, FromStr};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /* private use */
 use crate::io::bufreader_from_compressed_gfa;
@@ -17,6 +18,8 @@ use serde::{Deserialize, Serialize};
 static PATHID_PANSN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^([^#]+)(#[^#]+)?(#[^#].*)?$").unwrap());
 static PATHID_COORDS: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(.+):([0-9]+)-([0-9]+)$").unwrap());
+
+static METHOD_CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Orientation {
@@ -227,6 +230,7 @@ impl GraphStorage {
 
     #[inline]
     pub fn get_node_id(&self, node_name: &[u8]) -> Option<ItemId> {
+        METHOD_CALL_COUNT.fetch_add(1, Ordering::Relaxed);
         // self.node2id.get(node_name).cloned()
         if self.is_nice {
             unsafe {
@@ -237,6 +241,10 @@ impl GraphStorage {
         } else {
             self.node2id.get(node_name).cloned()
         }
+    }
+
+    pub fn get_call_count(&self) -> usize {
+        METHOD_CALL_COUNT.load(Ordering::Relaxed)
     }
 
     pub fn get_nodes(&self) -> Vec<ItemId> {
@@ -375,9 +383,10 @@ impl GraphStorage {
         }
 
         log::info!(
-            "found: {} paths/walks, {} nodes",
+            "found: {} paths/walks, {} nodes, ({} are meta_nodes)",
             path_segments.len(),
-            node2id.len()
+            node2id.len(),
+            meta_node_id,
         );
         if path_segments.is_empty() {
             log::warn!("graph does not contain any annotated paths (P/W lines)");
