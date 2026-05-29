@@ -128,8 +128,8 @@ impl GfaParser {
         is_nice: bool,
     ) -> Result<Self, Error> {
         let mut grammar = Grammar::default();
-        let graph_storage = GraphStorage::from_gfa(filename, is_nice);
-        if !graph_storage.node2rule_id.is_empty() {
+        let (graph_storage, has_meta_node) = GraphStorage::from_gfa(filename, is_nice);
+        if has_meta_node {
             grammar.parse_gfa(filename, &graph_storage);
         }
         let graph_mask = GraphMask::from_datamgr(&graph_mask_parameters, &graph_storage)?;
@@ -310,16 +310,15 @@ impl GfaParser {
         HashMap<PathSegment, (u32, u32)>,
         HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
     ) {
-        let (item_table, exclude_table, subset_covered_bps, path_lens, collected_paths) =
-            self.parse_paths_walks(&self.count_type, &Vec::new());
-        let abacus = AbacusByTotal::item_table_to_abacus(
+        let mut data = bufreader_from_compressed_gfa(&self.filename);
+        let (abacus, path_lens) = AbacusByTotal::from_gfa(
+            &mut data,
             &self.graph_mask,
             &self.graph_storage,
+            &self.grammar,
             self.count_type,
-            item_table,
-            exclude_table,
-            subset_covered_bps,
         );
+        let collected_paths = HashMap::new();
         (abacus, path_lens, collected_paths)
     }
 

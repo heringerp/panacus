@@ -5,7 +5,6 @@ use std::time::Instant;
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read},
-    sync::{atomic::AtomicU32, Arc, Mutex},
 };
 
 use rayon::prelude::*;
@@ -13,7 +12,7 @@ use rayon::prelude::*;
 use crate::file_formats::gfa_parser::grammar::Grammar;
 use crate::{
     file_formats::gfa_parser::Edge,
-    util::{intersects, is_contained, ActiveTable, CountType, IntervalContainer, ItemTable, Wrap},
+    util::{intersects, is_contained, ActiveTable, CountType, IntervalContainer, ItemTable},
 };
 
 use super::{abacus::GraphMask, graph::GraphStorage, ItemId, Orientation, PathSegment};
@@ -184,6 +183,195 @@ pub fn parse_gfa_paths_walks<R: Read>(
     (item_table, exclude_table, subset_covered_bps, paths_len)
 }
 
+pub fn parse_path_seq_update_tables(
+    data: &[u8],
+    graph_storage: &GraphStorage,
+    item_table: &mut ItemTable,
+    exclude_table: Option<&mut ActiveTable>,
+    num_path: usize,
+) -> (u32, u32) {
+    let mut it = data.iter();
+    let end = it
+        .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
+        .unwrap();
+
+    log::debug!("parsing path sequences of size {} bytes..", end);
+
+    let (segment_ids, bp_len) = get_path_segment_ids(data, graph_storage, end, CHUNK_SIZE);
+
+    segment_ids.into_iter().for_each(|segment_id| {
+        item_table.items.push(segment_id.0);
+        item_table.id_prefsum[num_path + 1] += 1;
+    });
+
+    // compute prefix sum
+    let mut num_nodes_path = 0;
+    num_nodes_path += item_table.id_prefsum[num_path + 1];
+    item_table.id_prefsum[num_path + 1] += item_table.id_prefsum[num_path];
+
+    // is exclude table is given, we assume that all nodes of the path are excluded
+    if let Some(ex) = exclude_table {
+        log::debug!("flagging nodes of path as excluded");
+        for j in (item_table.id_prefsum[num_path] as usize)
+            ..(item_table.id_prefsum[num_path + 1] as usize)
+        {
+            ex.items[item_table.items[j] as usize] |= true;
+        }
+    }
+
+    log::debug!("..done");
+    (num_nodes_path as u32, bp_len)
+}
+
+fn get_path_segment_ids(
+    data: &[u8],
+    graph_storage: &GraphStorage,
+    end: usize,
+    chunk_size: usize,
+) -> (Vec<ItemId>, u32) {
+    let (segment_ids, bp_lens): (Vec<_>, Vec<_>) = (0..end)
+        .into_par_iter()
+        .step_by(chunk_size)
+        .map(|chunk_start| {
+            let chunk_end = *[end, chunk_start + chunk_size].iter().min().unwrap();
+            let mut bp_len: u32 = 0;
+
+            // sits after first comma in chunk
+            let mut curr_pos = match chunk_start {
+                0 => 0,
+                x => {
+                    memchr(b',', &data[chunk_start..chunk_end])
+                    .map(|v| v + 1)                     // move *after* comma
+                    .unwrap_or(chunk_size + 3)          // add enough to chunk_size, so that while
+                                                        // loop does not run, if no comma in chunk
+                    + x
+                } // add offset back
+            };
+            let mut segment_ids = Vec::new();
+            while curr_pos - chunk_start < chunk_size + 1 {
+                // sits on comma at the end of the current segment
+                let segment_end = match memchr(b',', &data[curr_pos..]) {
+                    None => end,
+                    Some(idx) => curr_pos + idx,
+                };
+                let segment_end = if segment_end < end { segment_end } else { end };
+                if curr_pos >= segment_end {
+                    break;
+                }
+                let segment_id = get_segment_id(&data[curr_pos..segment_end], graph_storage);
+                bp_len += graph_storage.node_len(&segment_id);
+                segment_ids.push(segment_id);
+                // move curr_pos forward (after next comma)
+                curr_pos = segment_end + 1;
+            }
+            (segment_ids, bp_len)
+        })
+        .unzip();
+
+    let segment_ids = segment_ids.into_iter().concat();
+    let bp_len = bp_lens.into_iter().sum();
+
+    (segment_ids, bp_len)
+}
+
+pub fn parse_walk_seq_update_tables(
+    data: &[u8],
+    graph_storage: &GraphStorage,
+    grammar: &Grammar,
+    item_table: &mut ItemTable,
+    exclude_table: Option<&mut ActiveTable>,
+    num_path: usize,
+) -> (u32, u32) {
+    // later codes assumes that data is non-empty...
+    if data.is_empty() {
+        return (0, 0);
+    }
+
+    let mut it = data.iter();
+    let end = it
+        .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
+        .unwrap();
+
+    log::debug!("parsing walk sequences of size {}..", end);
+
+    let (segment_ids, bp_len) = get_walk_segment_ids(data, graph_storage, grammar, end, CHUNK_SIZE);
+
+    segment_ids.into_iter().for_each(|segment_id| {
+        item_table.items.push(segment_id.0);
+        item_table.id_prefsum[num_path + 1] += 1;
+    });
+
+    // compute prefix sum
+    let mut num_nodes_path = 0;
+    num_nodes_path += item_table.id_prefsum[num_path + 1];
+    item_table.id_prefsum[num_path + 1] += item_table.id_prefsum[num_path];
+
+    // is exclude table is given, we assume that all nodes of the path are excluded
+    if let Some(ex) = exclude_table {
+        log::error!("flagging nodes of path as excluded");
+        for j in (item_table.id_prefsum[num_path] as usize)
+            ..(item_table.id_prefsum[num_path + 1] as usize)
+        {
+            ex.items[item_table.items[j] as usize] |= true;
+        }
+    }
+
+    log::debug!("..done");
+    (num_nodes_path as u32, bp_len)
+}
+
+fn get_walk_segment_ids(
+    data: &[u8],
+    graph_storage: &GraphStorage,
+    grammar: &Grammar,
+    end: usize,
+    chunk_size: usize,
+) -> (Vec<ItemId>, u32) {
+    let (segment_ids, bp_lens): (Vec<_>, Vec<_>) = (0..end)
+        .step_by(chunk_size)
+        .map(|chunk_start| {
+            let chunk_end = *[end, chunk_start + chunk_size].iter().min().unwrap();
+            let mut bp_len: u32 = 0;
+
+            let mut curr_pos = match chunk_start {
+                0 => 0,
+                x => {
+                    memchr2(b'<', b'>', &data[chunk_start..chunk_end]).unwrap_or(chunk_size + 3) + x
+                }
+            };
+
+            let mut segment_ids = Vec::new();
+
+            while curr_pos - chunk_start < chunk_size {
+                let segment_end = match memchr2(b'<', b'>', &data[curr_pos + 1..]) {
+                    None => end,
+                    Some(idx) => curr_pos + 1 + idx,
+                };
+                let segment_end = if segment_end < end { segment_end } else { end };
+                if curr_pos >= segment_end {
+                    break;
+                }
+                let segment_id = get_walk_segment_id_grammar(
+                    &data[curr_pos..segment_end],
+                    graph_storage,
+                    grammar,
+                );
+                for segment in &segment_id {
+                    bp_len += graph_storage.node_len(&segment);
+                }
+                segment_ids.extend(segment_id);
+                // move curr_pos forward (after next comma)
+                curr_pos = segment_end;
+            }
+            (segment_ids, bp_len)
+        })
+        .unzip();
+
+    let segment_ids = segment_ids.into_iter().concat();
+    let bp_len = bp_lens.into_iter().sum();
+    (segment_ids, bp_len)
+}
+
 pub fn parse_walk_identifier(data: &[u8]) -> (PathSegment, &[u8]) {
     let mut six_col: Vec<&str> = Vec::with_capacity(6);
 
@@ -310,13 +498,6 @@ pub fn update_tables(
                 item_table.items.push(sid.0);
                 item_table.id_prefsum[num_path + 1] += 1;
                 if let Some(int) = subset_covered_bps.as_mut() {
-                    log::info!(
-                        "Thinking about whether to include {:?}, {}, {} -> l: {}",
-                        sid,
-                        a,
-                        b,
-                        l
-                    );
                     // if fully covered, we do not need to store anything in the map
                     if b - a == l {
                         if int.contains(sid) {
@@ -549,90 +730,6 @@ pub fn parse_walk_seq_to_item_vec(
     sids
 }
 
-pub fn parse_walk_seq_update_tables(
-    data: &[u8],
-    graph_storage: &GraphStorage,
-    grammar: &Grammar,
-    item_table: &mut ItemTable,
-    exclude_table: Option<&mut ActiveTable>,
-    num_path: usize,
-) -> (u32, u32) {
-    // later codes assumes that data is non-empty...
-    if data.is_empty() {
-        return (0, 0);
-    }
-
-    let items_ptr = Wrap(&mut item_table.items);
-    let id_prefsum_ptr = Wrap(&mut item_table.id_prefsum);
-
-    let mutex_item_table = Arc::new(Mutex::new(&mut item_table.items));
-
-    let mut it = data.iter();
-    let end = it
-        .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
-        .unwrap();
-
-    log::debug!("parsing walk sequences of size {}..", end);
-
-    let bp_len = Arc::new(AtomicU32::new(0));
-    // ignore first > | < so that no empty is created for 1st node
-    data[1..end]
-        .par_split(|&x| x == b'>' || x == b'<')
-        .for_each(|node| {
-            let sid = graph_storage
-                .get_node_id(node)
-                .unwrap_or_else(|| panic!("unknown node {}", str::from_utf8(node).unwrap()));
-            let mut sids = Vec::new();
-            if grammar.is_empty() {
-                sids.push(sid);
-            } else {
-                let mut stack = vec![sid];
-
-                while let Some(current) = stack.pop() {
-                    let rule_idx = graph_storage.node2rule_id[current.0 as usize];
-                    if rule_idx != usize::MAX {
-                        for (child, _) in grammar.get(rule_idx).iter().rev() {
-                            stack.push(*child);
-                        }
-                    } else {
-                        sids.push(current);
-                    }
-                }
-            }
-            if let Ok(_) = mutex_item_table.lock() {
-                unsafe {
-                    for sid in &sids {
-                        (*items_ptr.0).push(sid.0);
-                        (&mut (*id_prefsum_ptr.0))[num_path + 1] += 1;
-                    }
-                }
-            }
-            let length_in_bp = sids
-                .iter()
-                .fold(0, |acc, e| acc + graph_storage.node_len(e));
-            bp_len.fetch_add(length_in_bp, std::sync::atomic::Ordering::SeqCst);
-        });
-    let bp_len = bp_len.load(std::sync::atomic::Ordering::SeqCst);
-
-    // compute prefix sum
-    let mut num_nodes_path = 0;
-    num_nodes_path += item_table.id_prefsum[num_path + 1];
-    item_table.id_prefsum[num_path + 1] += item_table.id_prefsum[num_path];
-
-    // is exclude table is given, we assume that all nodes of the path are excluded
-    if let Some(ex) = exclude_table {
-        log::error!("flagging nodes of path as excluded");
-        for j in (item_table.id_prefsum[num_path] as usize)
-            ..(item_table.id_prefsum[num_path + 1] as usize)
-        {
-            ex.items[item_table.items[j] as usize] |= true;
-        }
-    }
-
-    log::debug!("..done");
-    (num_nodes_path as u32, bp_len)
-}
-
 pub fn parse_path_seq_to_item_vec(
     data: &[u8],
     graph_storage: &GraphStorage,
@@ -718,68 +815,41 @@ fn get_walk_segment_id(node: &[u8], graph_storage: &GraphStorage) -> ItemId {
     segment_id
 }
 
-pub fn parse_path_seq_update_tables(
-    data: &[u8],
+fn get_walk_segment_id_grammar(
+    node: &[u8],
     graph_storage: &GraphStorage,
-    item_table: &mut ItemTable,
-    exclude_table: Option<&mut ActiveTable>,
-    num_path: usize,
-) -> (u32, u32) {
-    let mut it = data.iter();
-    let end = it
-        .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
-        .unwrap();
+    grammar: &Grammar,
+) -> Vec<ItemId> {
+    let segment_id = graph_storage
+        .get_node_id(&node[1..node.len()])
+        .unwrap_or_else(|| panic!("unknown node {}", str::from_utf8(node).unwrap()));
+    // TODO: Is orientation really necessary?
+    let orientation = node[0];
+    assert!(
+        orientation == b'<' || orientation == b'>',
+        "unknown orientation of segment {}",
+        str::from_utf8(node).unwrap()
+    );
 
-    log::debug!("parsing path sequences of size {} bytes..", end);
+    let mut sids = Vec::new();
+    if grammar.is_empty() {
+        sids.push(segment_id);
+    } else {
+        let mut stack = vec![segment_id];
 
-    let items_ptr = Wrap(&mut item_table.items);
-    let id_prefsum_ptr = Wrap(&mut item_table.id_prefsum);
-
-    let mutex_item_table = Arc::new(Mutex::new(&mut item_table.items));
-
-    //let mut plus_strands: Vec<u32> = vec![0; rayon::current_num_threads()];
-    let bp_len = data[..end]
-        .par_split(|&x| x == b',')
-        .map(|node| {
-            let segment_id = graph_storage
-                .get_node_id(&node[0..node.len() - 1])
-                .unwrap_or_else(|| panic!("unknown node {}", str::from_utf8(node).unwrap()));
-            // TODO: Is orientation really necessary?
-            let orientation = node[node.len() - 1];
-            assert!(
-                orientation == b'-' || orientation == b'+',
-                "unknown orientation of segment {}",
-                str::from_utf8(node).unwrap()
-            );
-            //plus_strands[rayon::current_thread_index().unwrap()] += (orientation == b'+') as u32;
-
-            if let Ok(_) = mutex_item_table.lock() {
-                unsafe {
-                    (*items_ptr.0).push(segment_id.0);
-                    (&mut (*id_prefsum_ptr.0))[num_path + 1] += 1;
+        while let Some(current) = stack.pop() {
+            let rule_idx = graph_storage.node2rule_id[current.0 as usize];
+            if rule_idx != usize::MAX {
+                for (child, _) in grammar.get(rule_idx).iter().rev() {
+                    stack.push(*child);
                 }
+            } else {
+                sids.push(current);
             }
-            graph_storage.node_len(&segment_id)
-        })
-        .sum();
-
-    // compute prefix sum
-    let mut num_nodes_path = 0;
-    num_nodes_path += item_table.id_prefsum[num_path + 1];
-    item_table.id_prefsum[num_path + 1] += item_table.id_prefsum[num_path];
-
-    // is exclude table is given, we assume that all nodes of the path are excluded
-    if let Some(ex) = exclude_table {
-        log::debug!("flagging nodes of path as excluded");
-        for j in (item_table.id_prefsum[num_path] as usize)
-            ..(item_table.id_prefsum[num_path + 1] as usize)
-        {
-            ex.items[item_table.items[j] as usize] |= true;
         }
     }
-
-    log::debug!("..done");
-    (num_nodes_path as u32, bp_len)
+    //plus_strands[rayon::current_thread_index().unwrap()] += (orientation == b'+') as u32;
+    sids
 }
 
 #[cfg(test)]

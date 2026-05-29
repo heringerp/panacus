@@ -195,8 +195,8 @@ impl GraphStorage {
         }
     }
 
-    pub fn from_gfa(gfa_file: &str, is_nice: bool) -> Self {
-        let (node2id, node2rule_id, path_segments, node_lens, _extremities) =
+    pub fn from_gfa(gfa_file: &str, is_nice: bool) -> (Self, bool) {
+        let (node2id, node2rule_id, path_segments, node_lens, _extremities, has_meta_node) =
             Self::parse_nodes_gfa(gfa_file, None);
         let index_edges: bool = true;
         let (edge2id, edge_count, degree) = if index_edges {
@@ -208,18 +208,21 @@ impl GraphStorage {
         let node_count = node2id.len();
         log::debug!("Done creating GraphStorage");
 
-        Self {
-            node2id,
-            node2rule_id,
-            is_nice,
-            node_lens,
-            edge2id,
-            path_segments,
-            node_count,
-            edge_count,
-            degree,
-            // extremities,
-        }
+        (
+            Self {
+                node2id,
+                node2rule_id,
+                is_nice,
+                node_lens,
+                edge2id,
+                path_segments,
+                node_count,
+                edge_count,
+                degree,
+                // extremities,
+            },
+            has_meta_node,
+        )
     }
 
     #[inline]
@@ -299,8 +302,21 @@ impl GraphStorage {
         Vec<PathSegment>,
         Vec<u32>,
         Option<Vec<(u64, u64)>>,
+        bool, // Whether there was a meta node
     ) {
-        let mut node2id: FxHashMap<Vec<u8>, ItemId> = FxHashMap::default();
+        let mut buf = vec![];
+        let mut data = bufreader_from_compressed_gfa(gfa_file);
+        let mut count_nodes = 0;
+        while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
+            if buf[0] == b'S' || buf[0] == b'Q' {
+                count_nodes += 1;
+            }
+            buf.clear();
+        }
+        log::info!("Found {} nodes", count_nodes);
+
+        let mut node2id: FxHashMap<Vec<u8>, ItemId> =
+            FxHashMap::with_capacity_and_hasher(2 * count_nodes, Default::default());
         let mut node2rule_id: Vec<usize> = vec![usize::MAX];
         let mut path_segments: Vec<PathSegment> = Vec::new();
         let mut node_lens: Vec<u32> = Vec::new();
@@ -317,10 +333,8 @@ impl GraphStorage {
             if buf[0] == b'S' {
                 let mut iter = buf[2..].iter();
                 let offset = iter.position(|&x| x == b'\t').unwrap();
-                if node2id
-                    .insert(buf[2..offset + 2].to_vec(), ItemId(node_id))
-                    .is_some()
-                {
+                let text = buf[2..offset + 2].to_vec();
+                if node2id.insert(text, ItemId(node_id)).is_some() {
                     panic!(
                         "Segment with ID {} occurs multiple times in GFA",
                         str::from_utf8(&buf[2..offset + 2]).unwrap()
@@ -341,10 +355,8 @@ impl GraphStorage {
             } else if buf[0] == b'Q' {
                 let mut iter = buf[2..].iter();
                 let offset = iter.position(|&x| x == b'\t').unwrap();
-                if node2id
-                    .insert(buf[2..offset + 2].to_vec(), ItemId(node_id))
-                    .is_some()
-                {
+                let text = buf[2..offset + 2].to_vec();
+                if node2id.insert(text, ItemId(node_id)).is_some() {
                     panic!(
                         "Meta-Segment with ID {} occurs multiple times in GFA",
                         str::from_utf8(&buf[2..offset + 2]).unwrap()
@@ -377,6 +389,7 @@ impl GraphStorage {
             path_segments,
             node_lens,
             if k.is_none() { None } else { Some(extremities) },
+            meta_node_id > 0,
         )
     }
 
