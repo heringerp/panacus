@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use std::io::BufRead;
+use std::{collections::HashSet, io::BufRead};
 
 use regex::Regex;
 
@@ -34,6 +34,83 @@ impl Grammar {
         self.rules
             .push(self.rules.last().unwrap() + rule_text.len());
         self.rule_texts.extend(rule_text);
+    }
+
+    fn get_topological_sort(&self, node2rule_id: &[usize]) -> Vec<ItemId> {
+        log::info!("Calculating Topological Sort of Grammar");
+        let number_of_rules = self.rules.len() - 1;
+        let mut l: Vec<ItemId> = Vec::with_capacity(number_of_rules);
+        let mut marked = vec![false; number_of_rules];
+        for (idx, &rule_id) in node2rule_id.iter().enumerate() {
+            if rule_id == usize::MAX {
+                continue;
+            }
+            if !marked[rule_id] {
+                let item_id = ItemId(idx as u64);
+                self.visit(rule_id, item_id, &mut marked, &mut l, node2rule_id);
+            }
+        }
+        l.reverse();
+        l
+    }
+
+    fn visit(
+        &self,
+        rule: usize,
+        item_id: ItemId,
+        marked: &mut [bool],
+        l: &mut Vec<ItemId>,
+        node2rule_id: &[usize],
+    ) {
+        if marked[rule] {
+            return;
+        }
+        marked[rule] = true;
+
+        let (start, end) = (self.rules[rule], self.rules[rule + 1]);
+        for (child, _) in &self.rule_texts[start..end] {
+            if node2rule_id[child.0 as usize] != usize::MAX {
+                self.visit(
+                    node2rule_id[child.0 as usize],
+                    *child,
+                    marked,
+                    l,
+                    node2rule_id,
+                );
+            }
+        }
+        l.push(item_id)
+    }
+
+    pub fn push_down_values(&self, values: &mut Vec<u32>, node2rule_id: &[usize]) {
+        let sorting = self.get_topological_sort(node2rule_id);
+        // check topological sorting:
+        let mut seen: HashSet<ItemId> = HashSet::new();
+        for rule in sorting.iter().rev() {
+            seen.insert(*rule);
+            let rule_id = node2rule_id[rule.0 as usize];
+            let (start, end) = (self.rules[rule_id], self.rules[rule_id + 1]);
+            for (child, _) in &self.rule_texts[start..end] {
+                let child_id = child.0 as usize;
+                if node2rule_id[child_id] != usize::MAX && !seen.contains(child) {
+                    log::error!(
+                        "This non-terminal {:?} was not seen before, topological sort is wrong!",
+                        child
+                    );
+                    panic!();
+                }
+            }
+        }
+        for rule in sorting {
+            let value = values[rule.0 as usize];
+            let rule_id = node2rule_id[rule.0 as usize];
+            values[rule.0 as usize] = 0;
+            let (start, end) = (self.rules[rule_id], self.rules[rule_id + 1]);
+            for (child, _) in &self.rule_texts[start..end] {
+                let child_id = child.0 as usize;
+                values[child_id] += value;
+            }
+        }
     }
 
     pub fn get(&self, rule: usize) -> &[(ItemId, Orientation)] {

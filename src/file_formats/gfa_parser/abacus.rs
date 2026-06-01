@@ -424,17 +424,15 @@ impl AbacusByTotal {
             &count_type,
             &Vec::new(),
         );
-        (
-            Self::item_table_to_abacus(
-                graph_mask,
-                graph_storage,
-                count_type,
-                item_table,
-                exclude_table,
-                subset_covered_bps,
-            ),
-            paths_len,
-        )
+        let abacus = Self::item_table_to_abacus(
+            graph_mask,
+            graph_storage,
+            count_type,
+            item_table,
+            exclude_table,
+            subset_covered_bps,
+        );
+        (abacus, paths_len)
     }
 
     pub fn from_item_table(
