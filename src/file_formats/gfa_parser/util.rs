@@ -308,10 +308,12 @@ pub fn parse_walk_seq_update_tables(
 
     let (segment_ids, bp_len) = get_walk_segment_ids(data, graph_storage, grammar, end, CHUNK_SIZE);
 
-    segment_ids.into_iter().for_each(|segment_id| {
-        item_table.items.push(segment_id.0);
-        item_table.id_prefsum[num_path + 1] += 1;
-    });
+    let initial_len = item_table.items.len();
+    item_table
+        .items
+        .extend(segment_ids.into_iter().map(|s| s.0));
+    let items_added = item_table.items.len() - initial_len;
+    item_table.id_prefsum[num_path + 1] += items_added as u64;
 
     // compute prefix sum
     let mut num_nodes_path = 0;
@@ -715,11 +717,27 @@ pub fn parse_walk_seq_to_item_vec(
                         if current_id != usize::MAX {
                             match current_orientation {
                                 Orientation::Forward => {
-                                    stack.extend(grammar.get(current_id).iter().rev());
+                                    stack.extend(
+                                        grammar
+                                            .get_nodes(current_id)
+                                            .iter()
+                                            .copied()
+                                            .zip(
+                                                grammar
+                                                    .get_orientations(current_id)
+                                                    .iter()
+                                                    .copied(),
+                                            )
+                                            .rev(),
+                                    );
                                 }
                                 Orientation::Backward => {
                                     stack.extend(
-                                        grammar.get(current_id).iter().map(|(i, o)| (*i, o.flip())),
+                                        grammar
+                                            .get_nodes(current_id)
+                                            .iter()
+                                            .zip(grammar.get_orientations(current_id).iter())
+                                            .map(|(i, o)| (*i, o.flip())),
                                     );
                                 }
                             }
@@ -853,9 +871,8 @@ fn get_walk_segment_id_grammar(
         while let Some(current) = stack.pop() {
             let rule_idx = graph_storage.node2rule_id[current.0 as usize];
             if rule_idx != usize::MAX {
-                for (child, _) in grammar.get(rule_idx).iter().rev() {
-                    stack.push(*child);
-                }
+                let children = grammar.get_nodes(rule_idx);
+                stack.extend(children.iter().rev());
             } else {
                 sids.push(current);
             }

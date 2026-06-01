@@ -20,14 +20,16 @@ lazy_static! {
 
 pub struct Grammar {
     rules: Vec<usize>,
-    rule_texts: Vec<(ItemId, Orientation)>,
+    child_nodes: Vec<ItemId>,
+    child_orientations: Vec<Orientation>,
 }
 
 impl Default for Grammar {
     fn default() -> Self {
         Self {
             rules: vec![0],
-            rule_texts: Vec::new(),
+            child_nodes: Vec::new(),
+            child_orientations: Vec::new(),
         }
     }
 }
@@ -39,7 +41,10 @@ impl Grammar {
         }
         self.rules
             .push(self.rules.last().unwrap() + rule_text.len());
-        self.rule_texts.extend(rule_text);
+        let (child_nodes, child_orientations): (Vec<ItemId>, Vec<Orientation>) =
+            rule_text.into_iter().unzip();
+        self.child_nodes.extend(child_nodes);
+        self.child_orientations.extend(child_orientations);
     }
 
     fn get_topological_sort(&self, node2rule_id: &[usize]) -> Vec<ItemId> {
@@ -74,7 +79,7 @@ impl Grammar {
         marked[rule] = true;
 
         let (start, end) = (self.rules[rule], self.rules[rule + 1]);
-        for (child, _) in &self.rule_texts[start..end] {
+        for child in &self.child_nodes[start..end] {
             if node2rule_id[child.0 as usize] != usize::MAX {
                 self.visit(
                     node2rule_id[child.0 as usize],
@@ -96,7 +101,7 @@ impl Grammar {
             seen.insert(*rule);
             let rule_id = node2rule_id[rule.0 as usize];
             let (start, end) = (self.rules[rule_id], self.rules[rule_id + 1]);
-            for (child, _) in &self.rule_texts[start..end] {
+            for child in &self.child_nodes[start..end] {
                 let child_id = child.0 as usize;
                 if node2rule_id[child_id] != usize::MAX && !seen.contains(child) {
                     log::error!(
@@ -112,16 +117,21 @@ impl Grammar {
             let rule_id = node2rule_id[rule.0 as usize];
             values[rule.0 as usize] = 0;
             let (start, end) = (self.rules[rule_id], self.rules[rule_id + 1]);
-            for (child, _) in &self.rule_texts[start..end] {
+            for child in &self.child_nodes[start..end] {
                 let child_id = child.0 as usize;
                 values[child_id] += value;
             }
         }
     }
 
-    pub fn get(&self, rule: usize) -> &[(ItemId, Orientation)] {
+    pub fn get_nodes(&self, rule: usize) -> &[ItemId] {
         let (start, end) = (self.rules[rule], self.rules[rule + 1]);
-        &self.rule_texts[start..end]
+        &self.child_nodes[start..end]
+    }
+
+    pub fn get_orientations(&self, rule: usize) -> &[Orientation] {
+        let (start, end) = (self.rules[rule], self.rules[rule + 1]);
+        &self.child_orientations[start..end]
     }
 
     pub fn parse_gfa(&mut self, filename: &str, graph_storage: &GraphStorage) {
@@ -135,7 +145,7 @@ impl Grammar {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.rule_texts.is_empty()
+        self.child_nodes.is_empty()
     }
 
     pub fn len(&self) -> usize {
@@ -178,7 +188,7 @@ impl Grammar {
         R: BufRead + Send + 'static,
     {
         let (raw_tx, raw_rx) = bounded::<Vec<u8>>(16);
-        let (writer_tx, writer_rx) = bounded::<(ItemId, Vec<(ItemId, Orientation)>)>(128);
+        let (writer_tx, writer_rx) = bounded::<(ItemId, Vec<ItemId>, Vec<Orientation>)>(128);
         let lines_per_chunk = 100_000;
 
         // Read file into chunks and put them into raw channel
@@ -192,15 +202,17 @@ impl Grammar {
 
         let writer_thread = thread::spawn(move || {
             let mut rules = vec![0];
-            let mut rule_texts: Vec<(ItemId, Orientation)> = Vec::new();
+            let mut child_nodes: Vec<ItemId> = Vec::new();
+            let mut child_orientations: Vec<Orientation> = Vec::new();
             let mut order: Vec<ItemId> = Vec::new();
 
-            for (rule, rule_children) in writer_rx {
-                rule_texts.extend_from_slice(&rule_children);
-                rules.push(rule_texts.len());
+            for (rule, rule_children, rule_orientations) in writer_rx {
+                child_nodes.extend_from_slice(&rule_children);
+                child_orientations.extend_from_slice(&rule_orientations);
+                rules.push(child_nodes.len());
                 order.push(rule);
             }
-            (rules, rule_texts, order)
+            (rules, child_nodes, child_orientations, order)
         });
 
         raw_rx.into_iter().par_bridge().for_each(|chunk_bytes| {
@@ -213,23 +225,24 @@ impl Grammar {
                 let node_id = graph_storage.get_node_id(name).unwrap();
                 let content = fields.next().expect("Q line has content");
                 let splitter = WalkByteSplitter::new(content);
-                let nodes: Vec<(ItemId, Orientation)> = splitter
+                let (nodes, orientations): (Vec<ItemId>, Vec<Orientation>) = splitter
                     .map(|m| {
                         let (orientation, node) = m.split_at(1);
                         let orientation = Orientation::from_lg(orientation[0]);
                         let node = graph_storage.get_node_id(node).unwrap();
                         (node, orientation)
                     })
-                    .collect();
-                writer_tx.send((node_id, nodes)).unwrap();
+                    .unzip();
+                writer_tx.send((node_id, nodes, orientations)).unwrap();
             }
         });
 
         drop(writer_tx);
         io_thread.join().unwrap();
-        let (rules, rule_texts, order) = writer_thread.join().unwrap();
+        let (rules, child_nodes, child_orientations, order) = writer_thread.join().unwrap();
         self.rules = rules;
-        self.rule_texts = rule_texts;
+        self.child_nodes = child_nodes;
+        self.child_orientations = child_orientations;
         for (idx, rule) in order.iter().enumerate() {
             graph_storage.node2rule_id[rule.0 as usize] = idx;
         }
@@ -262,7 +275,7 @@ mod tests {
     fn test_default() {
         let grammar = Grammar::default();
         assert_eq!(grammar.rules.len(), 1);
-        assert_eq!(grammar.rule_texts.len(), 0);
+        assert_eq!(grammar.child_nodes.len(), 0);
     }
 
     #[test]
@@ -276,7 +289,7 @@ mod tests {
             ],
         );
         assert_eq!(grammar.rules.len(), 2);
-        assert_eq!(grammar.rule_texts.len(), 2);
+        assert_eq!(grammar.child_nodes.len(), 2);
     }
 
     #[test]
@@ -287,7 +300,8 @@ mod tests {
             (ItemId(2), Orientation::Backward),
         ];
         grammar.insert(0, text.clone());
-        let result = grammar.get(0);
-        assert_eq!(result, &text);
+        let result = grammar.get_nodes(0);
+        let expected = vec![ItemId(1), ItemId(2)];
+        assert_eq!(result, &expected);
     }
 }
