@@ -28,6 +28,7 @@ mod graph;
 mod hist;
 mod sparse_matrix;
 mod util;
+mod walk_splitter;
 
 pub use abacus::GraphMask;
 pub use abacus::GraphMaskParameters;
@@ -121,9 +122,9 @@ impl GfaParser {
         is_nice: bool,
     ) -> Result<Self, Error> {
         let mut grammar = Grammar::default();
-        let (graph_storage, has_meta_node) = GraphStorage::from_gfa(filename, is_nice);
+        let (mut graph_storage, has_meta_node) = GraphStorage::from_gfa(filename, is_nice);
         if has_meta_node {
-            grammar.parse_gfa(filename, &graph_storage);
+            grammar.parse_gfa_parallel(filename, &mut graph_storage);
             log::info!("found {} rules", grammar.len());
         }
         let graph_mask = GraphMask::from_datamgr(&graph_mask_parameters, &graph_storage)?;

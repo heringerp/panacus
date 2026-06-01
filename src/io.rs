@@ -11,10 +11,10 @@ use quick_csv::Csv;
 use crate::file_formats::gfa_parser::PathSegment;
 use crate::util::*;
 
-pub fn bufreader_from_compressed_gfa(gfa_file: &str) -> BufReader<Box<dyn Read>> {
+pub fn bufreader_from_compressed_gfa(gfa_file: &str) -> BufReader<Box<dyn Read + Send>> {
     log::info!("loading graph from {}", &gfa_file);
     let f = std::fs::File::open(gfa_file).expect("Error opening file");
-    let reader: Box<dyn Read> = if gfa_file.ends_with(".gz") {
+    let reader: Box<dyn Read + Send> = if gfa_file.ends_with(".gz") {
         log::info!("assuming that {} is gzip compressed..", &gfa_file);
         Box::new(MultiGzDecoder::new(f))
     } else {

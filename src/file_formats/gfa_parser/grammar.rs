@@ -1,10 +1,16 @@
+use crossbeam_channel::bounded;
 use lazy_static::lazy_static;
-use std::{collections::HashSet, io::BufRead};
+use rayon::iter::{ParallelBridge, ParallelIterator};
+use std::{collections::HashSet, io::BufRead, thread, time::Instant};
 
 use regex::Regex;
 
 use crate::{
-    file_formats::gfa_parser::{graph::GraphStorage, ItemId, Orientation},
+    file_formats::gfa_parser::{
+        graph::GraphStorage,
+        walk_splitter::{WalkByteSplitter, WalkSplitter},
+        ItemId, Orientation,
+    },
     io::bufreader_from_compressed_gfa,
 };
 
@@ -123,6 +129,11 @@ impl Grammar {
         self.parse_buffer(buf, graph_storage);
     }
 
+    pub fn parse_gfa_parallel(&mut self, filename: &str, graph_storage: &mut GraphStorage) {
+        let buf = bufreader_from_compressed_gfa(filename);
+        self.parse_buffer_in_parallel(buf, graph_storage);
+    }
+
     pub fn is_empty(&self) -> bool {
         self.rule_texts.is_empty()
     }
@@ -134,31 +145,112 @@ impl Grammar {
     fn parse_buffer(&mut self, buf: impl BufRead, graph_storage: &GraphStorage) {
         let lines = buf.lines().map(|l| l.expect("Failed to read line"));
 
+        let timer = Instant::now();
         for line in lines {
             if line.starts_with("Q\t") {
                 let mut fields = line.split("\t").skip(1);
-                let name: Vec<u8> = fields
-                    .next()
-                    .expect("Q line has segment name")
-                    .as_bytes()
-                    .iter()
-                    .copied()
-                    .collect();
-                let node_id = graph_storage.get_node_id(&name).unwrap();
+                let name: &[u8] = fields.next().expect("Q line has segment name").as_bytes();
+                let node_id = graph_storage.get_node_id(name).unwrap();
                 let rule_id = graph_storage.node2rule_id[node_id.0 as usize];
                 let content = fields.next().expect("Q line has content");
-                let nodes: Vec<(ItemId, Orientation)> = RE_WALK
-                    .captures_iter(content)
+                let splitter = WalkSplitter::new(content);
+                let nodes: Vec<(ItemId, Orientation)> = splitter
                     .map(|m| {
-                        let orientation = Orientation::from_lg(m[1].bytes().nth(0).unwrap() as u8);
-                        let node: Vec<u8> = m[2].bytes().collect();
-                        let node = graph_storage.get_node_id(&node).unwrap();
+                        let (orientation, node) = m.split_at(1);
+                        let orientation = Orientation::from_lg(orientation.as_bytes()[0]);
+                        let node = graph_storage.get_node_id(node.as_bytes()).unwrap();
                         (node, orientation)
                     })
                     .collect();
                 self.insert(rule_id, nodes);
             }
         }
+        let duration = timer.elapsed();
+        log::info!(
+            "grammar parsing done; count: {:?}; time elapsed: {:?}",
+            self.rules.len() - 1,
+            duration
+        );
+    }
+
+    fn parse_buffer_in_parallel<R>(&mut self, mut buf: R, graph_storage: &mut GraphStorage)
+    where
+        R: BufRead + Send + 'static,
+    {
+        let (raw_tx, raw_rx) = bounded::<Vec<u8>>(16);
+        let (writer_tx, writer_rx) = bounded::<(ItemId, Vec<(ItemId, Orientation)>)>(128);
+        let lines_per_chunk = 100_000;
+
+        // Read file into chunks and put them into raw channel
+        let io_thread = thread::spawn(move || {
+            while let Some(chunk) = read_lines_to_chunk(&mut buf, lines_per_chunk) {
+                if raw_tx.send(chunk).is_err() {
+                    break;
+                }
+            }
+        });
+
+        let writer_thread = thread::spawn(move || {
+            let mut rules = vec![0];
+            let mut rule_texts: Vec<(ItemId, Orientation)> = Vec::new();
+            let mut order: Vec<ItemId> = Vec::new();
+
+            for (rule, rule_children) in writer_rx {
+                rule_texts.extend_from_slice(&rule_children);
+                rules.push(rule_texts.len());
+                order.push(rule);
+            }
+            (rules, rule_texts, order)
+        });
+
+        raw_rx.into_iter().par_bridge().for_each(|chunk_bytes| {
+            for line in chunk_bytes.split(|&b| b == b'\n') {
+                if !line.starts_with(&[b'Q']) {
+                    continue;
+                }
+                let mut fields = line.split(|&c| c == b'\t').skip(1);
+                let name: &[u8] = fields.next().expect("Q line has segment name");
+                let node_id = graph_storage.get_node_id(name).unwrap();
+                let content = fields.next().expect("Q line has content");
+                let splitter = WalkByteSplitter::new(content);
+                let nodes: Vec<(ItemId, Orientation)> = splitter
+                    .map(|m| {
+                        let (orientation, node) = m.split_at(1);
+                        let orientation = Orientation::from_lg(orientation[0]);
+                        let node = graph_storage.get_node_id(node).unwrap();
+                        (node, orientation)
+                    })
+                    .collect();
+                writer_tx.send((node_id, nodes)).unwrap();
+            }
+        });
+
+        drop(writer_tx);
+        io_thread.join().unwrap();
+        let (rules, rule_texts, order) = writer_thread.join().unwrap();
+        self.rules = rules;
+        self.rule_texts = rule_texts;
+        for (idx, rule) in order.iter().enumerate() {
+            graph_storage.node2rule_id[rule.0 as usize] = idx;
+        }
+    }
+}
+
+fn read_lines_to_chunk<R: BufRead>(reader: &mut R, lines_per_chunk: usize) -> Option<Vec<u8>> {
+    let mut chunk = Vec::with_capacity(lines_per_chunk * 128);
+    for _ in 0..lines_per_chunk {
+        let bytes_read = reader
+            .read_until(b'\n', &mut chunk)
+            .expect("Failed to read disk");
+
+        if bytes_read == 0 {
+            break;
+        }
+    }
+    if chunk.is_empty() {
+        None
+    } else {
+        Some(chunk)
     }
 }
 
