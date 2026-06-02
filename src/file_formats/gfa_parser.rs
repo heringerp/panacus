@@ -46,6 +46,7 @@ pub struct GfaParser {
     filename: String,
     count_type: CountType,
     graph_mask_parameters: GraphMaskParameters,
+    reference: Option<String>,
 
     // Generated
     graph_storage: GraphStorage,
@@ -87,12 +88,16 @@ impl FileFormatParser for GfaParser {
     }
 
     fn generate_matrix(self: Box<Self>) -> CoverageMatrix {
-        let (item_table, path_names, feature_lengths, feature_names, path_lengths) = self
-            .get_cleaned_item_table(
+        let paths_to_collect = match self.reference.as_ref() {
+            Some(r) => vec![PathSegment::from_str(r)],
+            None => vec![],
+        };
+        let (item_table, path_names, feature_lengths, feature_names, path_lengths, collected_paths) =
+            self.get_cleaned_item_table(
                 &self.graph_mask,
                 &self.graph_storage,
                 self.count_type,
-                &Vec::new(),
+                &paths_to_collect,
             )
             .expect("Can parse GFA file");
         let file_info = self.get_file_info_value(path_lengths);
@@ -119,6 +124,7 @@ impl GfaParser {
         filename: &str,
         count_type: CountType,
         graph_mask_parameters: GraphMaskParameters,
+        reference: Option<String>,
         is_nice: bool,
     ) -> Result<Self, Error> {
         let mut grammar = Grammar::from(count_type);
@@ -132,6 +138,7 @@ impl GfaParser {
             filename: filename.to_owned(),
             count_type,
             graph_mask_parameters,
+            reference,
             graph_storage,
             graph_mask,
             grammar,
@@ -329,10 +336,11 @@ impl GfaParser {
         Vec<usize>,
         Vec<String>,
         HashMap<PathSegment, (u32, u32)>,
+        HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
     )> {
         log::info!("parsing path + walk sequences");
         let mut data = bufreader_from_compressed_gfa(&self.filename);
-        let (item_table, exclude_table, subset_covered_bps, paths_len, _collected_paths) =
+        let (item_table, exclude_table, subset_covered_bps, paths_len, collected_paths) =
             parse_gfa_paths_walks(
                 &mut data,
                 graph_mask,
@@ -394,6 +402,7 @@ impl GfaParser {
             feature_lengths,
             feature_names,
             paths_len,
+            collected_paths,
         ))
     }
 

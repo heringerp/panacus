@@ -27,6 +27,7 @@ pub enum FileRun {
         subset: String,
         #[serde(default)]
         exclude: String,
+        reference: Option<String>,
         grouping: Option<Grouping>,
         #[serde(default)]
         nice: bool,

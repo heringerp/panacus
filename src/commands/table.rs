@@ -54,6 +54,7 @@ pub fn get_instructions(args: &ArgMatches) -> Option<anyhow::Result<Vec<FileRun>
             subset,
             exclude,
             grouping,
+            reference: None,
             nice: false,
             count_type: count,
             analyses: vec![AnalysisParameter::Table { total, order }],

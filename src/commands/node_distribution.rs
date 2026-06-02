@@ -52,6 +52,7 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<FileRun>, anyhow
             subset,
             exclude,
             grouping,
+            reference: None,
             nice: false,
             count_type: crate::util::CountType::Bp,
             analyses: vec![AnalysisParameter::NodeDistribution {

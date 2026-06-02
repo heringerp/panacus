@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use itertools::{Itertools, MinMaxResult};
+
 use crate::{
     analyses::info::FileInfo,
     file_formats::gfa_parser::SparseMatrix,
@@ -93,6 +95,55 @@ impl CoverageMatrix {
                     hist.insert_feature_of_coverage_and_length(c, *l)
                 }
             });
+        hist
+    }
+
+    pub fn get_regional_hists(
+        &self,
+        window_size: usize,
+        slide_step: usize,
+    ) -> impl Iterator<Item = (usize, usize, Hist)> + '_ {
+        let (min, max) = match self.feature_positions.iter().minmax() {
+            MinMaxResult::NoElements => unimplemented!("Should return empty iterator"),
+            MinMaxResult::OneElement(&x) => (x, x),
+            MinMaxResult::MinMax(&min, &max) => (min, max),
+        };
+
+        let number_of_windows =
+            ((max - window_size - min + 1) as f64 / slide_step as f64).ceil() as usize + 1;
+        let mut feature_buckets: Vec<Vec<usize>> = vec![Vec::new(); number_of_windows];
+        for (feature_idx, &position) in self.feature_positions.iter().enumerate() {
+            let start_window =
+                ((position - window_size - min + 1) as f64 / slide_step as f64).ceil() as usize;
+            let end_window = ((position - min) as f64 / slide_step as f64).floor() as usize;
+            for window in start_window..=end_window {
+                feature_buckets[window].push(feature_idx);
+            }
+        }
+        feature_buckets
+            .into_iter()
+            .enumerate()
+            .map(move |(idx, bucket)| {
+                let hist = self.get_hist_for_features(&bucket);
+                let start = idx * slide_step;
+                let end = idx * slide_step + window_size;
+                (start, end, hist)
+            })
+    }
+
+    pub fn get_hist_for_features(&self, features: &[usize]) -> Hist {
+        let mut hist = Hist::from_maximum_coverage(
+            self.path_names.len(),
+            self.get_feature_type().to_owned(),
+            self.get_run_id().to_owned(),
+            self.get_run_name().to_owned(),
+        );
+        for &feature in features {
+            // TODO: this might be inefficient if windows are highly overlapping
+            // (if this function is called from get_regional_hists)
+            let count = self.get_count_of_feature(feature);
+            hist.insert_feature_of_coverage_and_length(count, self.feature_lengths[feature]);
+        }
         hist
     }
 

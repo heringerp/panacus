@@ -59,6 +59,7 @@ pub fn get_instructions(args: &ArgMatches) -> Option<anyhow::Result<Vec<FileRun>
             exclude,
             grouping,
             count_type: count,
+            reference: None,
             nice: false,
             analyses: vec![AnalysisParameter::OrderedGrowth {
                 coverage,

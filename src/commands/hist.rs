@@ -49,6 +49,7 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<FileRun>, anyhow
             subset,
             exclude,
             grouping,
+            reference: None,
             nice: false,
             count_type: count,
             analyses: vec![AnalysisParameter::Hist {}],
