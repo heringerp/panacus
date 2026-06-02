@@ -121,7 +121,7 @@ impl GfaParser {
         graph_mask_parameters: GraphMaskParameters,
         is_nice: bool,
     ) -> Result<Self, Error> {
-        let mut grammar = Grammar::default();
+        let mut grammar = Grammar::from(count_type);
         let (mut graph_storage, has_meta_node) = GraphStorage::from_gfa(filename, is_nice);
         if has_meta_node {
             grammar.parse_gfa_parallel(filename, &mut graph_storage);

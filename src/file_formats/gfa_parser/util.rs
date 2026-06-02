@@ -681,6 +681,7 @@ pub fn parse_walk_seq_to_item_vec(
     log::debug!("parsing walk sequences of size {}..", end);
 
     let segment_ids: Vec<_> = (0..end)
+        .into_par_iter()
         .step_by(CHUNK_SIZE)
         .map(|chunk_start| {
             let chunk_end = *[end, chunk_start + CHUNK_SIZE].iter().min().unwrap();
@@ -706,47 +707,7 @@ pub fn parse_walk_seq_to_item_vec(
                 let segment_id = get_walk_segment_id(&data[curr_pos..segment_end], graph_storage);
                 let orientation = Orientation::from_lg(data[curr_pos]);
 
-                // TODO translation
-                let mut sids = Vec::new();
-                if grammar.is_empty() {
-                    sids.push((segment_id, orientation))
-                } else {
-                    let mut stack = vec![(segment_id, orientation)];
-                    while let Some((current_node, current_orientation)) = stack.pop() {
-                        let current_id = graph_storage.node2rule_id[current_node.0 as usize];
-                        if current_id != usize::MAX {
-                            match current_orientation {
-                                Orientation::Forward => {
-                                    stack.extend(
-                                        grammar
-                                            .get_nodes(current_id)
-                                            .iter()
-                                            .copied()
-                                            .zip(
-                                                grammar
-                                                    .get_orientations(current_id)
-                                                    .iter()
-                                                    .copied(),
-                                            )
-                                            .rev(),
-                                    );
-                                }
-                                Orientation::Backward => {
-                                    stack.extend(
-                                        grammar
-                                            .get_nodes(current_id)
-                                            .iter()
-                                            .zip(grammar.get_orientations(current_id).iter())
-                                            .map(|(i, o)| (*i, o.flip())),
-                                    );
-                                }
-                            }
-                        } else {
-                            sids.push((current_node, current_orientation));
-                        }
-                    }
-                }
-
+                let sids = grammar.decompress_ordered(segment_id, orientation, graph_storage);
                 segment_ids.extend(sids);
                 // move curr_pos forward (after next comma)
                 curr_pos = segment_end;
@@ -862,22 +823,7 @@ fn get_walk_segment_id_grammar(
         str::from_utf8(node).unwrap()
     );
 
-    let mut sids = Vec::new();
-    if grammar.is_empty() {
-        sids.push(segment_id);
-    } else {
-        let mut stack = vec![segment_id];
-
-        while let Some(current) = stack.pop() {
-            let rule_idx = graph_storage.node2rule_id[current.0 as usize];
-            if rule_idx != usize::MAX {
-                let children = grammar.get_nodes(rule_idx);
-                stack.extend(children.iter().rev());
-            } else {
-                sids.push(current);
-            }
-        }
-    }
+    let sids = grammar.decompress_unordered(segment_id, graph_storage);
     //plus_strands[rayon::current_thread_index().unwrap()] += (orientation == b'+') as u32;
     sids
 }

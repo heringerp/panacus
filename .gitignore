@@ -24,3 +24,4 @@ etc/package.json
 *.bed
 *.json.gz
 .vs
+*.zst

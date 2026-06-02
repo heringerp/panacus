@@ -1,10 +1,12 @@
 use crossbeam_channel::bounded;
 use lazy_static::lazy_static;
 use rayon::iter::{ParallelBridge, ParallelIterator};
+use std::sync::OnceLock;
 use std::{collections::HashSet, io::BufRead, thread, time::Instant};
 
 use regex::Regex;
 
+use crate::util::CountType;
 use crate::{
     file_formats::gfa_parser::{
         graph::GraphStorage,
@@ -18,18 +20,27 @@ lazy_static! {
     static ref RE_WALK: Regex = Regex::new(r"([><])([!-;=?-~]+)").unwrap();
 }
 
+const MAX_CACHE_LEN: usize = 64;
+
 pub struct Grammar {
     rules: Vec<usize>,
     child_nodes: Vec<ItemId>,
+    // This is only used if the count_type is Edge
     child_orientations: Vec<Orientation>,
+    rule_node_cache: Vec<OnceLock<Box<[ItemId]>>>,
+    rule_orientation_cache: Vec<OnceLock<Box<[Orientation]>>>,
+    count_type: CountType,
 }
 
-impl Default for Grammar {
-    fn default() -> Self {
+impl Grammar {
+    pub fn from(count_type: CountType) -> Self {
         Self {
             rules: vec![0],
             child_nodes: Vec::new(),
             child_orientations: Vec::new(),
+            rule_node_cache: Vec::new(),
+            rule_orientation_cache: Vec::new(),
+            count_type,
         }
     }
 }
@@ -44,7 +55,11 @@ impl Grammar {
         let (child_nodes, child_orientations): (Vec<ItemId>, Vec<Orientation>) =
             rule_text.into_iter().unzip();
         self.child_nodes.extend(child_nodes);
-        self.child_orientations.extend(child_orientations);
+        if self.count_type == CountType::Edge {
+            self.child_orientations.extend(child_orientations);
+            self.rule_orientation_cache.push(OnceLock::new());
+        }
+        self.rule_node_cache.push(OnceLock::new());
     }
 
     fn get_topological_sort(&self, node2rule_id: &[usize]) -> Vec<ItemId> {
@@ -130,6 +145,9 @@ impl Grammar {
     }
 
     pub fn get_orientations(&self, rule: usize) -> &[Orientation] {
+        if self.count_type != CountType::Edge {
+            panic!("Orientations are only set when CountType is Edge")
+        }
         let (start, end) = (self.rules[rule], self.rules[rule + 1]);
         &self.child_orientations[start..end]
     }
@@ -150,6 +168,152 @@ impl Grammar {
 
     pub fn len(&self) -> usize {
         self.rules.len() - 1
+    }
+
+    pub fn decompress_unordered(
+        &self,
+        segment_id: ItemId,
+        graph_storage: &GraphStorage,
+    ) -> Vec<ItemId> {
+        let mut sids = Vec::new();
+        if self.is_empty() {
+            sids.push(segment_id);
+        } else {
+            let mut stack: Vec<DecompOp<ItemId>> = vec![DecompOp::Element(segment_id)];
+
+            while let Some(op) = stack.pop() {
+                match op {
+                    DecompOp::Element(current) => {
+                        let rule_idx = graph_storage.node2rule_id[current.0 as usize];
+                        if rule_idx != usize::MAX {
+                            // We have cached the rule already
+                            if let Some(cached) = self.rule_node_cache[rule_idx].get() {
+                                sids.extend_from_slice(cached);
+                                continue;
+                            }
+                            stack.push(DecompOp::RuleEnd {
+                                rule_id: rule_idx,
+                                is_forward: true,
+                                output_start: sids.len(),
+                            });
+                            let children = self.get_nodes(rule_idx);
+                            stack.extend(children.iter().rev().map(|&x| DecompOp::Element(x)));
+                        } else {
+                            sids.push(current);
+                        }
+                    }
+                    DecompOp::RuleEnd {
+                        rule_id,
+                        is_forward: _,
+                        output_start,
+                    } => {
+                        let rule_len = sids.len() - output_start;
+
+                        if rule_len > 0 && rule_len <= MAX_CACHE_LEN {
+                            let expanded_slice: Box<[ItemId]> = sids[output_start..].into();
+                            let _ = self.rule_node_cache[rule_id].set(expanded_slice);
+                        }
+                    }
+                }
+            }
+        }
+        sids
+    }
+
+    pub fn decompress_ordered(
+        &self,
+        segment_id: ItemId,
+        orientation: Orientation,
+        graph_storage: &GraphStorage,
+    ) -> Vec<(ItemId, Orientation)> {
+        let mut sids = Vec::new();
+        if self.is_empty() {
+            sids.push((segment_id, orientation))
+        } else {
+            let mut stack = vec![DecompOp::Element((segment_id, orientation))];
+            while let Some(op) = stack.pop() {
+                match op {
+                    DecompOp::Element((current_node, current_orientation)) => {
+                        let current_id = graph_storage.node2rule_id[current_node.0 as usize];
+                        if current_id != usize::MAX {
+                            if let (Some(cached_nodes), Some(cached_orientations)) = (
+                                self.rule_node_cache[current_id].get(),
+                                self.rule_orientation_cache[current_id].get(),
+                            ) {
+                                if current_orientation == Orientation::Forward {
+                                    let iter = cached_nodes
+                                        .iter()
+                                        .copied()
+                                        .zip(cached_orientations.iter().copied());
+                                    sids.extend(iter);
+                                } else {
+                                    // If we need the backward direction add reverse complement of cache
+                                    let iter = cached_nodes
+                                        .iter()
+                                        .copied()
+                                        .zip(cached_orientations.iter().map(|o| o.flip()))
+                                        .rev();
+                                    sids.extend(iter);
+                                }
+                                continue;
+                            }
+                            stack.push(DecompOp::RuleEnd {
+                                rule_id: current_id,
+                                is_forward: current_orientation == Orientation::Forward,
+                                output_start: sids.len(),
+                            });
+                            match current_orientation {
+                                Orientation::Forward => {
+                                    stack.extend(
+                                        self.get_nodes(current_id)
+                                            .iter()
+                                            .copied()
+                                            .zip(self.get_orientations(current_id).iter().copied())
+                                            .map(|x| DecompOp::Element(x))
+                                            .rev(),
+                                    );
+                                }
+                                Orientation::Backward => {
+                                    stack.extend(
+                                        self.get_nodes(current_id)
+                                            .iter()
+                                            .zip(self.get_orientations(current_id).iter())
+                                            .map(|(i, o)| DecompOp::Element((*i, o.flip()))),
+                                    );
+                                }
+                            }
+                        } else {
+                            sids.push((current_node, current_orientation));
+                        }
+                    }
+                    DecompOp::RuleEnd {
+                        rule_id,
+                        is_forward,
+                        output_start,
+                    } => {
+                        let rule_len = sids.len() - output_start;
+
+                        if rule_len > 0 && rule_len <= MAX_CACHE_LEN {
+                            let (node_slice, orientation_slice): (Vec<ItemId>, Vec<Orientation>) =
+                                match is_forward {
+                                    true => sids[output_start..].iter().map(|x| *x).unzip(),
+                                    // If we put the reverse rule into sids, put the forward rule in the cache
+                                    false => sids[output_start..]
+                                        .iter()
+                                        .rev()
+                                        .map(|&(n, o)| (n, o.flip()))
+                                        .unzip(),
+                                };
+                            let node_slice = node_slice.into_boxed_slice();
+                            let orientation_slice = orientation_slice.into_boxed_slice();
+                            let _ = self.rule_node_cache[rule_id].set(node_slice);
+                            let _ = self.rule_orientation_cache[rule_id].set(orientation_slice);
+                        }
+                    }
+                }
+            }
+        }
+        sids
     }
 
     fn parse_buffer(&mut self, buf: impl BufRead, graph_storage: &GraphStorage) {
@@ -242,7 +406,15 @@ impl Grammar {
         let (rules, child_nodes, child_orientations, order) = writer_thread.join().unwrap();
         self.rules = rules;
         self.child_nodes = child_nodes;
-        self.child_orientations = child_orientations;
+        if self.count_type == CountType::Edge {
+            self.child_orientations = child_orientations;
+            self.rule_orientation_cache = std::iter::repeat_with(OnceLock::new)
+                .take(self.child_orientations.len())
+                .collect();
+        }
+        self.rule_node_cache = std::iter::repeat_with(OnceLock::new)
+            .take(self.child_nodes.len())
+            .collect();
         for (idx, rule) in order.iter().enumerate() {
             graph_storage.node2rule_id[rule.0 as usize] = idx;
         }
@@ -267,20 +439,30 @@ fn read_lines_to_chunk<R: BufRead>(reader: &mut R, lines_per_chunk: usize) -> Op
     }
 }
 
+#[derive(Debug)]
+enum DecompOp<T> {
+    Element(T),
+    RuleEnd {
+        rule_id: usize,
+        is_forward: bool,
+        output_start: usize,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_default() {
-        let grammar = Grammar::default();
+        let grammar = Grammar::from(CountType::Node);
         assert_eq!(grammar.rules.len(), 1);
         assert_eq!(grammar.child_nodes.len(), 0);
     }
 
     #[test]
     fn test_insert_rule() {
-        let mut grammar = Grammar::default();
+        let mut grammar = Grammar::from(CountType::Node);
         grammar.insert(
             0,
             vec![
@@ -294,7 +476,7 @@ mod tests {
 
     #[test]
     fn test_lookup_rule() {
-        let mut grammar = Grammar::default();
+        let mut grammar = Grammar::from(CountType::Node);
         let text = vec![
             (ItemId(1), Orientation::Forward),
             (ItemId(2), Orientation::Backward),
