@@ -13,7 +13,7 @@ use crate::{
 pub struct CoverageMatrix {
     count_of_features: usize,
     feature_lengths: Vec<usize>,
-    feature_positions: Vec<usize>,
+    feature_positions: Positions,
     feature_names: Vec<String>,
     path_names: Vec<String>,
     matrix: SparseMatrix,
@@ -34,7 +34,7 @@ impl CoverageMatrix {
         Self {
             count_of_features: 0,
             feature_lengths: Vec::new(),
-            feature_positions: Vec::new(),
+            feature_positions: Positions::new(),
             feature_names: Vec::new(),
             path_names: Vec::new(),
             matrix: SparseMatrix::new(),
@@ -98,36 +98,46 @@ impl CoverageMatrix {
         hist
     }
 
+    /// Takes a window size and by what number that window should step forward (often the same number)
+    /// Returns an iterator over references by name and all of the starts, ends and hists for the reference
     pub fn get_regional_hists(
         &self,
         window_size: usize,
         slide_step: usize,
-    ) -> impl Iterator<Item = (usize, usize, Hist)> + '_ {
-        let (min, max) = match self.feature_positions.iter().minmax() {
-            MinMaxResult::NoElements => unimplemented!("Should return empty iterator"),
-            MinMaxResult::OneElement(&x) => (x, x),
-            MinMaxResult::MinMax(&min, &max) => (min, max),
-        };
+    ) -> impl Iterator<Item = (String, impl Iterator<Item = (usize, usize, Hist)> + '_)> + '_ {
+        let mut all_references_buckets: Vec<(String, usize, Vec<Vec<usize>>)> = Vec::new();
+        for (ref_id, reference) in self.feature_positions.references.iter().enumerate() {
+            let (min, max) = match self.feature_positions.get_pos_iter_ref_id(ref_id).minmax() {
+                MinMaxResult::NoElements => unimplemented!("Should return empty iterator"),
+                MinMaxResult::OneElement(x) => (x, x),
+                MinMaxResult::MinMax(min, max) => (min, max),
+            };
 
-        let number_of_windows =
-            ((max - window_size - min + 1) as f64 / slide_step as f64).ceil() as usize + 1;
-        let mut feature_buckets: Vec<Vec<usize>> = vec![Vec::new(); number_of_windows];
-        for (feature_idx, &position) in self.feature_positions.iter().enumerate() {
-            let start_window =
-                ((position - window_size - min + 1) as f64 / slide_step as f64).ceil() as usize;
-            let end_window = ((position - min) as f64 / slide_step as f64).floor() as usize;
-            for window in start_window..=end_window {
-                feature_buckets[window].push(feature_idx);
+            let number_of_windows =
+                ((max - window_size - min + 1) as f64 / slide_step as f64).ceil() as usize + 1;
+            let mut feature_buckets: Vec<Vec<usize>> = vec![Vec::new(); number_of_windows];
+            for (feature_idx, position) in self.feature_positions.get_idpos_iter_ref_id(ref_id) {
+                let start_window =
+                    ((position - window_size - min + 1) as f64 / slide_step as f64).ceil() as usize;
+                let end_window = ((position - min) as f64 / slide_step as f64).floor() as usize;
+                for window in start_window..=end_window {
+                    feature_buckets[window].push(feature_idx);
+                }
             }
+            all_references_buckets.push((reference.to_string(), min, feature_buckets));
         }
-        feature_buckets
+        all_references_buckets
             .into_iter()
-            .enumerate()
-            .map(move |(idx, bucket)| {
-                let hist = self.get_hist_for_features(&bucket);
-                let start = idx * slide_step;
-                let end = idx * slide_step + window_size;
-                (start, end, hist)
+            .map(move |(reference, min, buckets)| {
+                (
+                    reference,
+                    buckets.into_iter().enumerate().map(move |(idx, bucket)| {
+                        let hist = self.get_hist_for_features(&bucket);
+                        let start = min + idx * slide_step;
+                        let end = min + idx * slide_step + window_size;
+                        (start, end, hist)
+                    }),
+                )
             })
     }
 
@@ -151,7 +161,7 @@ impl CoverageMatrix {
         &mut self,
         feature_name: String,
         feature_length: usize,
-        feature_position: usize,
+        feature_position: (&str, usize),
         feature: Vec<u32>,
     ) {
         // Check if we have the same number of entries as we have paths
@@ -159,7 +169,8 @@ impl CoverageMatrix {
         self.count_of_features += 1;
         self.feature_names.push(feature_name);
         self.feature_lengths.push(feature_length);
-        self.feature_positions.push(feature_position);
+        self.feature_positions
+            .insert(feature_position.0, feature_position.1);
         self.matrix.insert_row(feature);
     }
 
@@ -167,7 +178,7 @@ impl CoverageMatrix {
         &mut self,
         path_names: Vec<String>,
         feature_lengths: Vec<usize>,
-        feature_positions: Vec<usize>,
+        feature_positions: Positions,
         feature_names: Vec<String>,
         item_table: ItemTable,
     ) {
@@ -364,5 +375,120 @@ impl CoverageMatrix {
 
     pub fn get_file_info(&self) -> &FileInfo {
         &self.file_info
+    }
+}
+
+#[derive(Debug)]
+pub struct Positions {
+    references: Vec<String>,
+    reference_lookup: HashMap<String, u8>,
+    feature_refs: Vec<u8>,
+    feature_positions: Vec<usize>,
+}
+
+impl Positions {
+    pub fn new() -> Self {
+        Self {
+            references: Vec::new(),
+            reference_lookup: HashMap::new(),
+            feature_refs: Vec::new(),
+            feature_positions: Vec::new(),
+        }
+    }
+
+    pub fn with_size(size: usize) -> Self {
+        Self {
+            references: Vec::new(),
+            reference_lookup: HashMap::new(),
+            feature_refs: vec![u8::MAX; size],
+            feature_positions: vec![0; size],
+        }
+    }
+
+    pub fn set(&mut self, idx: usize, reference: &str, position: usize) {
+        if let Some(&id) = self.reference_lookup.get(reference) {
+            self.feature_refs[idx] = id;
+            self.feature_positions[idx] = position;
+        } else {
+            self.references.push(reference.to_string());
+            let id = (self.references.len() - 1) as u8;
+            self.reference_lookup.insert(reference.to_string(), id);
+            self.feature_refs[idx] = id;
+            self.feature_positions[idx] = position;
+        }
+    }
+
+    pub fn get(&self, id: usize) -> (&str, usize) {
+        let ref_id = self.feature_refs[id];
+        let reference = if ref_id != u8::MAX {
+            &self.references[ref_id as usize]
+        } else {
+            "DEFAULT"
+        };
+        let pos = self.feature_positions[id];
+        (reference, pos)
+    }
+
+    pub fn insert(&mut self, reference: &str, position: usize) {
+        if let Some(&id) = self.reference_lookup.get(reference) {
+            self.feature_refs.push(id);
+            self.feature_positions.push(position);
+        } else {
+            self.references.push(reference.to_string());
+            let id = (self.references.len() - 1) as u8;
+            self.reference_lookup.insert(reference.to_string(), id);
+            self.feature_refs.push(id);
+            self.feature_positions.push(position);
+        }
+    }
+
+    pub fn apply_mask(&mut self, mask: &[bool]) {
+        let mut iter = mask.iter();
+        self.feature_refs.retain(|_| *iter.next().unwrap());
+        let mut iter = mask.iter();
+        self.feature_positions.retain(|_| *iter.next().unwrap());
+    }
+
+    pub fn get_pos_iter_ref_id(&self, ref_id: usize) -> impl Iterator<Item = usize> + '_ {
+        self.feature_positions
+            .iter()
+            .enumerate()
+            .filter_map(move |(idx, &pos)| {
+                if self.feature_refs[idx] == ref_id as u8 {
+                    Some(pos)
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// This function cleans up invalid (i.e. unset) positions
+    pub fn cleanup(&mut self) {
+        if self.feature_refs.iter().any(|&x| x == u8::MAX) {
+            self.references.push("DEFAULT".to_string());
+            let id = (self.references.len() - 1) as u8;
+            self.reference_lookup.insert("DEFAULT".to_string(), id);
+            self.feature_refs.iter_mut().for_each(|x| {
+                if *x == u8::MAX {
+                    *x = id
+                }
+            });
+        }
+    }
+
+    pub fn get_idpos_iter_ref_id(
+        &self,
+        ref_id: usize,
+    ) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.feature_positions
+            .iter()
+            .enumerate()
+            .filter_map(move |(idx, &pos)| {
+                if self.feature_refs[idx] == ref_id as u8 {
+                    Some((idx, pos))
+                } else {
+                    None
+                }
+            })
     }
 }

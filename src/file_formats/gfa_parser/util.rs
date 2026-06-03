@@ -57,7 +57,7 @@ pub fn parse_gfa_paths_walks<R: Read>(
                 _ => unreachable!(),
             };
 
-            log::debug!("processing path {}", &path_seg);
+            log::debug!("processing path {:?}", &path_seg);
 
             let include_coords = if graph_mask.include_coords.is_none() {
                 &complete[..]
@@ -119,13 +119,15 @@ pub fn parse_gfa_paths_walks<R: Read>(
                 } else {
                     exclude_table.as_mut()
                 };
-                let (num_added_nodes, bp_len) = match buf[0] {
+                let should_collect_path = paths_to_collect.iter().any(|p| path_seg.is_part_of(p));
+                let (num_added_nodes, bp_len, path) = match buf[0] {
                     b'P' => parse_path_seq_update_tables(
                         buf_path_seg,
                         graph_storage,
                         &mut item_table,
                         ex,
                         num_path,
+                        should_collect_path,
                     ),
                     b'W' => parse_walk_seq_update_tables(
                         buf_path_seg,
@@ -134,9 +136,14 @@ pub fn parse_gfa_paths_walks<R: Read>(
                         &mut item_table,
                         ex,
                         num_path,
+                        should_collect_path,
                     ),
                     _ => unreachable!(),
                 };
+                if should_collect_path {
+                    log::info!("Full collected: {:?}", path_seg);
+                    collected_paths.insert(path_seg.clone(), path);
+                }
                 paths_len.insert(path_seg, (num_added_nodes, bp_len));
             } else {
                 let sids = match buf[0] {
@@ -146,6 +153,7 @@ pub fn parse_gfa_paths_walks<R: Read>(
                 };
 
                 if paths_to_collect.iter().any(|p| path_seg.is_part_of(p)) {
+                    log::info!("Collected: {:?}", path_seg);
                     collected_paths.insert(path_seg.clone(), sids.clone());
                 }
                 match count {
@@ -201,7 +209,8 @@ pub fn parse_path_seq_update_tables(
     item_table: &mut ItemTable,
     exclude_table: Option<&mut ActiveTable>,
     num_path: usize,
-) -> (u32, u32) {
+    should_collect_path: bool,
+) -> (u32, u32, Vec<(ItemId, Orientation)>) {
     let mut it = data.iter();
     let end = it
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
@@ -210,6 +219,16 @@ pub fn parse_path_seq_update_tables(
     log::debug!("parsing path sequences of size {} bytes..", end);
 
     let (segment_ids, bp_len) = get_path_segment_ids(data, graph_storage, end, CHUNK_SIZE);
+
+    // This function is only called with nodes, so orientation shouldn't matter
+    let path = if should_collect_path {
+        segment_ids
+            .iter()
+            .map(|x| (*x, Orientation::Forward))
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     segment_ids.into_iter().for_each(|segment_id| {
         item_table.items.push(segment_id.0);
@@ -232,7 +251,7 @@ pub fn parse_path_seq_update_tables(
     }
 
     log::debug!("..done");
-    (num_nodes_path as u32, bp_len)
+    (num_nodes_path as u32, bp_len, path)
 }
 
 fn get_path_segment_ids(
@@ -293,10 +312,11 @@ pub fn parse_walk_seq_update_tables(
     item_table: &mut ItemTable,
     exclude_table: Option<&mut ActiveTable>,
     num_path: usize,
-) -> (u32, u32) {
+    should_collect_path: bool,
+) -> (u32, u32, Vec<(ItemId, Orientation)>) {
     // later codes assumes that data is non-empty...
     if data.is_empty() {
-        return (0, 0);
+        return (0, 0, Vec::new());
     }
 
     let mut it = data.iter();
@@ -307,6 +327,15 @@ pub fn parse_walk_seq_update_tables(
     log::debug!("parsing walk sequences of size {}..", end);
 
     let (segment_ids, bp_len) = get_walk_segment_ids(data, graph_storage, grammar, end, CHUNK_SIZE);
+
+    let path = if should_collect_path {
+        segment_ids
+            .iter()
+            .map(|x| (*x, Orientation::Forward))
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     let initial_len = item_table.items.len();
     item_table
@@ -331,7 +360,7 @@ pub fn parse_walk_seq_update_tables(
     }
 
     log::debug!("..done");
-    (num_nodes_path as u32, bp_len)
+    (num_nodes_path as u32, bp_len, path)
 }
 
 fn get_walk_segment_ids(

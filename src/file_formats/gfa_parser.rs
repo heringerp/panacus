@@ -3,7 +3,7 @@ use itertools::Itertools;
 
 use crate::{
     analyses::info::FileInfo,
-    coverage_matrix::CoverageMatrix,
+    coverage_matrix::{CoverageMatrix, Positions},
     file_formats::{
         gfa_parser::{grammar::Grammar, graph::GraphStorage, util::parse_gfa_paths_walks},
         FileFormatParser,
@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::{collections::HashMap, str};
 
 pub use abacus::AbacusByTotal;
@@ -92,7 +92,7 @@ impl FileFormatParser for GfaParser {
             Some(r) => vec![PathSegment::from_str(r)],
             None => vec![],
         };
-        let (item_table, path_names, feature_lengths, feature_names, path_lengths, collected_paths) =
+        let (item_table, path_names, feature_lengths, feature_names, path_lengths, mut positions) =
             self.get_cleaned_item_table(
                 &self.graph_mask,
                 &self.graph_storage,
@@ -100,6 +100,7 @@ impl FileFormatParser for GfaParser {
                 &paths_to_collect,
             )
             .expect("Can parse GFA file");
+        positions.cleanup();
         let file_info = self.get_file_info_value(path_lengths);
         let mut matrix = CoverageMatrix::new(
             self.count_type.to_string(),
@@ -107,15 +108,150 @@ impl FileFormatParser for GfaParser {
             self.get_run_name(),
             file_info,
         );
-        let number_of_features = feature_lengths.len();
         matrix.insert_item_table(
             path_names,
             feature_lengths,
-            vec![0; number_of_features],
+            positions,
             feature_names,
             item_table,
         );
         matrix
+    }
+}
+
+fn get_close_nodes(
+    ref_nodes: &Vec<(ItemId, Orientation)>,
+    neighbors: &HashMap<(ItemId, Orientation), HashSet<ItemId>>,
+) -> HashMap<(ItemId, Orientation), Vec<ItemId>> {
+    let mut queue: VecDeque<ItemId> = VecDeque::new();
+    let mut closest_ref: HashMap<ItemId, (ItemId, Orientation)> = HashMap::new();
+    let ref_node_set: HashSet<ItemId> = ref_nodes.iter().map(|(x, _)| x).copied().collect();
+    for (ref_node, orientation) in ref_nodes {
+        closest_ref.insert(*ref_node, (*ref_node, *orientation));
+        for neighbor in neighbors
+            .get(&(*ref_node, *orientation))
+            .unwrap_or(&HashSet::new())
+        {
+            if !ref_node_set.contains(neighbor) && !closest_ref.contains_key(neighbor) {
+                closest_ref.insert(*neighbor, (*ref_node, *orientation));
+                queue.push_front(*neighbor);
+            }
+        }
+        for neighbor in neighbors
+            .get(&(*ref_node, orientation.flip()))
+            .unwrap_or(&HashSet::new())
+        {
+            if !ref_node_set.contains(neighbor) && !closest_ref.contains_key(neighbor) {
+                closest_ref.insert(*neighbor, (*ref_node, orientation.flip()));
+                queue.push_front(*neighbor);
+            }
+        }
+    }
+    while let Some(current_node) = queue.pop_back() {
+        for neighbor in neighbors
+            .get(&(current_node, Orientation::Forward))
+            .unwrap_or(&HashSet::new())
+        {
+            if !closest_ref.contains_key(neighbor) {
+                let current_closest_ref = closest_ref
+                    .get(&current_node)
+                    .expect("Current is in closest ref");
+                closest_ref.insert(*neighbor, *current_closest_ref);
+                queue.push_front(*neighbor);
+            }
+        }
+        for neighbor in neighbors
+            .get(&(current_node, Orientation::Backward))
+            .unwrap_or(&HashSet::new())
+        {
+            if !closest_ref.contains_key(neighbor) {
+                let current_closest_ref = closest_ref
+                    .get(&current_node)
+                    .expect("Current is in closest ref");
+                closest_ref.insert(*neighbor, *current_closest_ref);
+                queue.push_front(*neighbor);
+            }
+        }
+    }
+    let mut flipped: HashMap<(ItemId, Orientation), Vec<ItemId>> = HashMap::new();
+    for (entry_node, ref_node) in closest_ref {
+        flipped.entry(ref_node).or_default().push(entry_node);
+    }
+    flipped
+}
+
+fn get_positions_nodes(
+    collected_paths: &HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
+    graph_storage: &GraphStorage,
+) -> Positions {
+    let edge2id = graph_storage.edge2id.as_ref().expect("Edges need to exist");
+
+    let neighbors: HashMap<(ItemId, Orientation), HashSet<ItemId>> = edge2id
+        .keys()
+        .flat_map(|x| [((x.0, x.1), x.2), ((x.2, x.3), x.0)])
+        .fold(HashMap::new(), |mut acc, (k, v)| {
+            acc.entry(k).or_default().insert(v);
+            acc
+        });
+    let mut all_positions = Positions::with_size(graph_storage.node_count);
+    for (reference, nodes) in collected_paths.iter() {
+        let initial_start = reference.start.unwrap_or(0);
+        // Contains the position of each reference node
+        let positions: Vec<usize> = nodes
+            .iter()
+            .scan(initial_start, |acc, (node, _)| {
+                let length = graph_storage.node_lens[node.0 as usize] as usize;
+                let old_acc = *acc;
+                *acc += length;
+                Some(old_acc)
+            })
+            .collect();
+        let close_nodes = get_close_nodes(nodes, &neighbors);
+        for (node, position) in nodes.iter().zip(positions.iter()) {
+            all_positions.set(
+                node.0 .0 as usize - 1,
+                reference.to_string().as_str(),
+                *position,
+            );
+            let closest_ones = &close_nodes[node];
+            for offref_node in closest_ones {
+                all_positions.set(
+                    offref_node.0 as usize - 1,
+                    reference.to_string().as_str(),
+                    *position,
+                );
+            }
+        }
+    }
+    all_positions
+}
+
+fn get_positions_edges(
+    collected_paths: &HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
+    graph_storage: &GraphStorage,
+) -> Positions {
+    let node_positions = get_positions_nodes(collected_paths, graph_storage);
+    let mut edge_positions = Positions::with_size(graph_storage.edge_count);
+    let edge2id = graph_storage
+        .edge2id
+        .as_ref()
+        .expect("Edges have been collected");
+    // TODO: does this need to be done more intellegently? Approach seems a bit naive
+    for (Edge(node1, _orientation1, _node2, _orientation2), &id) in edge2id.iter() {
+        let (reference, position) = node_positions.get(node1.0 as usize - 1);
+        edge_positions.set(id.0 as usize - 1, reference, position);
+    }
+    edge_positions
+}
+
+fn get_positions(
+    count_type: CountType,
+    collected_paths: &HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
+    graph_storage: &GraphStorage,
+) -> Positions {
+    match count_type {
+        CountType::Node | CountType::Bp => get_positions_nodes(collected_paths, graph_storage),
+        CountType::Edge => get_positions_edges(collected_paths, graph_storage),
     }
 }
 
@@ -336,7 +472,7 @@ impl GfaParser {
         Vec<usize>,
         Vec<String>,
         HashMap<PathSegment, (u32, u32)>,
-        HashMap<PathSegment, Vec<(ItemId, Orientation)>>,
+        Positions,
     )> {
         log::info!("parsing path + walk sequences");
         let mut data = bufreader_from_compressed_gfa(&self.filename);
@@ -368,6 +504,13 @@ impl GfaParser {
             path_order.push((path_id, (groups.len() - 1) as GroupSize));
         }
 
+        log::info!("Collected {} paths", collected_paths.len());
+        let mut positions = if collected_paths.is_empty() {
+            Positions::with_size(graph_storage.node_count)
+        } else {
+            get_positions(count, &collected_paths, graph_storage)
+        };
+
         let path_names: Vec<String> = self
             .graph_storage
             .path_segments
@@ -378,7 +521,14 @@ impl GfaParser {
             .graph_storage
             .path_segments
             .iter()
-            .map(|x| graph_mask.groups[x].clone())
+            .map(|x| {
+                let x = &x.clear_coords();
+                if let Some(name) = graph_mask.groups.get(x) {
+                    name.clone()
+                } else {
+                    panic!("Could not get {} from {:?}", x, graph_mask.groups)
+                }
+            })
             .collect_vec();
         let mgroup_names: HashSet<&str> = graph_mask
             .get_path_order(&self.graph_storage.path_segments)
@@ -393,8 +543,13 @@ impl GfaParser {
         } else {
             Self::collapse_item_table(item_table, group_names, mgroup_names, &exclude_table)
         };
-        let (feature_lengths, feature_names) =
-            Self::get_feature_lengths(graph_storage, &exclude_table, &subset_covered_bps, count);
+        let (feature_lengths, feature_names) = Self::get_feature_lengths(
+            graph_storage,
+            &exclude_table,
+            &subset_covered_bps,
+            count,
+            &mut positions,
+        );
 
         Ok((
             item_table,
@@ -402,7 +557,7 @@ impl GfaParser {
             feature_lengths,
             feature_names,
             paths_len,
-            collected_paths,
+            positions,
         ))
     }
 
@@ -411,6 +566,7 @@ impl GfaParser {
         exclude_table: &Option<ActiveTable>,
         subset_covered_bps: &Option<IntervalContainer>,
         count_type: CountType,
+        positions: &mut Positions,
     ) -> (Vec<usize>, Vec<String>) {
         let mut feature_lengths = match count_type {
             CountType::Node => vec![1; graph_storage.node_count],
@@ -467,6 +623,9 @@ impl GfaParser {
             // Do the same for the feature names
             let mut iter = e.items.iter().skip(1);
             feature_names.retain(|_| !iter.next().unwrap());
+
+            let flipped: Vec<bool> = e.items.iter().skip(1).map(|x| !x).collect();
+            positions.apply_mask(&flipped);
         }
 
         if let Some(s) = subset_covered_bps.as_ref() {
@@ -498,6 +657,7 @@ impl GfaParser {
             let mut to_keep_names = to_keep.iter();
             feature_lengths.retain(|_| *to_keep_lengths.next().unwrap());
             feature_names.retain(|_| *to_keep_names.next().unwrap());
+            positions.apply_mask(&to_keep);
         }
 
         (feature_lengths, feature_names)

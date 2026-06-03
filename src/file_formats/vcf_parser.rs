@@ -175,7 +175,7 @@ impl VcfParser {
                 matrix.insert_feature(
                     name,
                     feature_length,
-                    variant.pos,
+                    (variant.chrom, variant.pos),
                     feature.into_iter().flatten().collect(),
                 );
                 stats.num_alleles += 1;
