@@ -384,7 +384,7 @@ for (let key in objects.datasets) {
               return {
                 start: start,
                 end: end,
-                event: text
+                "Section": text
               };
             });
         let layer_values = [
@@ -408,7 +408,7 @@ for (let key in objects.datasets) {
           "title": "taxa",
           "type": "quantitative"
         },
-        "color": {"field": "event", "type": "nominal", "scale": {"scheme": "pastel1"}}
+        "color": {"field": "Section", "type": "nominal", "scale": {"scheme": "pastel1"}}
       },
       },
                       {
