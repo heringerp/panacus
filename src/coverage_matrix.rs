@@ -107,14 +107,20 @@ impl CoverageMatrix {
     ) -> impl Iterator<Item = (String, impl Iterator<Item = (usize, usize, Hist)> + '_)> + '_ {
         let mut all_references_buckets: Vec<(String, usize, Vec<Vec<usize>>)> = Vec::new();
         for (ref_id, reference) in self.feature_positions.references.iter().enumerate() {
-            let (min, max) = match self.feature_positions.get_pos_iter_ref_id(ref_id).minmax() {
+            let (min, mut max) = match self.feature_positions.get_pos_iter_ref_id(ref_id).minmax() {
                 MinMaxResult::NoElements => unimplemented!("Should return empty iterator"),
-                MinMaxResult::OneElement(x) => (x, x),
+                MinMaxResult::OneElement(x) => (x, x + 1),
                 MinMaxResult::MinMax(min, max) => (min, max),
             };
+            if max == min {
+                max += 1;
+            }
+            let number_of_windows = if max == min + 1 {
+                1
+            } else {
+                ((max - window_size - min + 1) as f64 / slide_step as f64).ceil() as usize + 1
+            };
 
-            let number_of_windows =
-                ((max - window_size - min + 1) as f64 / slide_step as f64).ceil() as usize + 1;
             let mut feature_buckets: Vec<Vec<usize>> = vec![Vec::new(); number_of_windows];
             for (feature_idx, position) in self.feature_positions.get_idpos_iter_ref_id(ref_id) {
                 let start_window =

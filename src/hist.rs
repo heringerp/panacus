@@ -1,3 +1,5 @@
+use std::ops::Index;
+
 pub struct Hist {
     count_of_features: usize,
     hist: Vec<usize>,
@@ -57,7 +59,7 @@ impl Hist {
         self.hist.len() - 1
     }
 
-    pub fn get_hist_values(&self) -> &Vec<usize> {
+    pub fn get_hist_values(&self) -> &[usize] {
         &self.hist
     }
 
@@ -71,5 +73,13 @@ impl Hist {
 
     pub fn get_run_name(&self) -> &str {
         &self.run_name
+    }
+}
+
+impl Index<usize> for Hist {
+    type Output = usize;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.hist[index]
     }
 }

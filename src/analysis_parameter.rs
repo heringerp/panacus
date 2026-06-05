@@ -12,6 +12,7 @@ use crate::analyses::hist::Hist;
 use crate::analyses::info::Info;
 use crate::analyses::node_distribution::NodeDistribution;
 use crate::analyses::ordered_histgrowth::OrderedHistgrowth;
+use crate::analyses::regional_variation::RegionalVariation;
 use crate::analyses::section_growth::SectionGrowth;
 use crate::analyses::similarity::Similarity;
 use crate::analyses::table::Table;
@@ -82,30 +83,14 @@ pub enum AnalysisParameter {
         name: String,
         file: String,
     },
-    RegionalDegree {
-        reference: String,
+    RegionalVariation {
         #[serde(default = "get_window_size")]
         window_size: usize,
-    },
-    RegionalGrowth {
-        reference: String,
-        reference_subset: Option<String>,
-        #[serde(default)]
-        merge_small_windows: bool,
-        #[serde(default = "get_window_size")]
-        window_size: usize,
-        #[serde(default)]
-        log_windows: bool,
     },
     SectionGrowth {
         sections: String,
         coverage: Option<String>,
         quorum: Option<String>,
-    },
-    RegionalCount {
-        reference: String,
-        #[serde(default = "get_window_size")]
-        window_size: usize,
     },
     CoverageColors,
 }
@@ -147,6 +132,9 @@ impl AnalysisParameter {
                 Analysis::MatrixBased(Box::new(Similarity::new(cluster_method)))
             }
             Self::Info => Analysis::MatrixBased(Box::new(Info::new())),
+            Self::RegionalVariation { window_size } => {
+                Analysis::MatrixBased(Box::new(RegionalVariation::new(window_size)))
+            }
             _ => unimplemented!("Other analyses have not been yet implemented"),
         }
     }

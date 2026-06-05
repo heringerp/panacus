@@ -72,7 +72,7 @@ impl MatrixBasedAnalysis for CoverageLine {
         if self.hist.is_none() {
             self.set_inner(matrix);
         }
-        let mut values = self.hist.as_ref().unwrap().get_hist_values().clone();
+        let mut values = self.hist.as_ref().unwrap().get_hist_values().to_vec();
         while let Some(last) = values.pop() {
             if last != 0 {
                 values.push(0);
