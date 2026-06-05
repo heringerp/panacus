@@ -348,6 +348,175 @@ for (let key in objects.datasets) {
         }
 
         render("linear", id, yourVlSpec, true);
+    } else if (element instanceof SectionLine) {
+        let m = element;
+        var ctx = document.getElementById('chart-bar-' + m.id);
+        let id = 'chart-bar-' + m.id;
+        let mark_type, x_encoding;
+        if (m.ordinal) {
+            mark_type = "line";
+            x_encoding = {
+                "field": "label",
+                "title": m.x_label,
+                "type": "quantitative",
+                "scale": {
+                    "nice": false
+                }
+            };
+        } else {
+            mark_type = "line";
+            x_encoding = {
+                "field": "label",
+                "title": m.x_label,
+                "type": 'nominal',
+                "sort": null,
+                "axis": {
+                    "labelOverlap": "greedy"
+                }
+            }
+        }
+        const values = m.separators.values;
+        const texts = m.section_labels.values;
+        const finalEnd = Number(m.data.values.at(-1).label);
+        const separator_values = texts.map((text, index) => {
+              const start = index === 0 ? 0 : values[index - 1];
+              const end = index === texts.length - 1 ? finalEnd : values[index];
+              return {
+                start: start,
+                end: end,
+                event: text
+              };
+            });
+        let layer_values = [
+
+{
+      "mark": "rect",
+      "data": {
+        "values": separator_values
+              },
+      "encoding": {
+        "x": {
+          "field": "start",
+          "title": "taxa",
+          "type": "quantitative",
+          "scale": {
+            "nice": false
+          }
+        },
+        "x2": {
+          "field": "end",
+          "title": "taxa",
+          "type": "quantitative"
+        },
+        "color": {"field": "event", "type": "nominal", "scale": {"scheme": "pastel1"}}
+      },
+      },
+                      {
+                    "params": [
+                        {
+                          "name": "toggle-curves",
+                          "bind": "legend",
+                          "select": {
+                            "type": "point",
+                            "toggle": "true",
+                            "fields": ["name"]
+                          }
+                        }
+                    ],
+                    "mark": {"type": mark_type, "tooltip": {"content": "data"}},
+                    "encoding": {
+                        "x": x_encoding,
+                        "y": {
+                            "field": "value",
+                            "title": m.y_label,
+                            "stack": null
+                        },
+                        "color": {
+                            "field": "name",
+                            "type": "nominal",
+                            "scale": {
+                                "range": ['#f77189', '#bb9832', '#50b131', '#36ada4', '#3ba3ec', '#e866f4']
+                            }
+                        },
+                        "opacity": {
+                            "condition": {"param": "toggle-curves", "value": 1},
+                            "value": 0.2
+                        }
+                    },
+                },
+            ];
+        let yourVlSpec = {
+            $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
+            "description": 'MultiBar',
+            "width": 1000,
+            "autosize": {
+                "type": "fit",
+                "contains": "padding"
+            },
+            "height": 350,
+            "data": m.data,
+            "layer": layer_values,
+            "resolve": {
+                "scale": {
+                    "color": "independent"
+                }
+            }
+        };
+
+        function render(scaleType, thisId, vlSpec, add_listeners) {
+            const copied_spec = JSON.parse(JSON.stringify(vlSpec)); // deep copy
+            if (scaleType == "log") {
+                copied_spec.layer[1].encoding.y.scale = { type: "log", domainMin: 1 }; // set scale type
+                copied_spec.layer[1].encoding.y2 = { datum: 1 }; // set scale type
+            } else {
+                copied_spec.layer[1].encoding.y.scale = { type: "linear" }; // set scale type
+                if ('y2' in copied_spec.layer[1].encoding) {
+                    delete copied_spec.layer[1].encoding[y2]; // set scale type
+                }
+            }
+            let opt = {
+                "actions": false,
+            };
+            vegaEmbed(`#${CSS.escape(thisId)}`, copied_spec, opt).then(({ view, spec, vgSpec }) => {
+                if (add_listeners) {
+                    // Export PNG
+                    let png_button = document.getElementById('btn-download-plot-png-' + m.id);
+                    png_button.addEventListener('click', () => {
+                        view.toImageURL('png').then(url => {
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = 'visualization.png';
+                            a.click();
+                        });
+                    });
+
+                    // Export SVG
+                    let svg_button = document.getElementById('btn-download-plot-svg-' + m.id);
+                    svg_button.removeEventListener('click', svg_button);
+                    svg_button.addEventListener('click', function svg_button() {
+                        view.toImageURL('svg').then(url => {
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = 'visualization.svg';
+                            a.click();
+                        });
+                    });
+
+                    // Open in Vega Editor
+                    let vega_editor_button = document.getElementById('btn-download-plot-vega-editor-' + m.id);
+                    vega_editor_button.addEventListener('click', () => {
+                        post_to_vega_editor(window, {
+                            mode: 'vega-lite',
+                            spec: JSON.stringify(spec, null, 2),
+                            renderer: undefined,
+                            config: undefined,
+                        });
+                    });
+                }
+            });
+        }
+
+        render("linear", id, yourVlSpec, true);
     } else if (element instanceof Line) {
         let l = element;
         let thisId = 'chart-line-' + l.id;

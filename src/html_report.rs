@@ -427,6 +427,17 @@ pub enum ReportItem {
         curve: Option<Vec<f64>>,
         alpha: Option<f64>,
     },
+    SectionLine {
+        id: String,
+        names: Vec<String>,
+        x_label: String,
+        y_label: String,
+        labels: Vec<String>,
+        values: Vec<Vec<f64>>,
+        section_separators: Vec<f64>,
+        section_labels: Vec<String>,
+        log_toggle: bool,
+    },
     Table {
         id: String,
         header: Vec<String>,
@@ -486,6 +497,7 @@ impl ReportItem {
         match self {
             Self::Bar { id, .. } => id.to_string(),
             Self::MultiBar { id, .. } => id.to_string(),
+            Self::SectionLine { id, .. } => id.to_string(),
             Self::Table { id, .. } => id.to_string(),
             Self::Heatmap { id, .. } => id.to_string(),
             Self::Hexbin { id, .. } => id.to_string(),
@@ -502,6 +514,7 @@ impl ReportItem {
         match self {
             Self::Bar { name, .. } => name.to_string(),
             Self::MultiBar { .. } => "MultiBar".to_string(),
+            Self::SectionLine { .. } => "SectionLine".to_string(),
             Self::Table { .. } => "Table".to_string(),
             Self::Heatmap { name, .. } => name.to_string(),
             Self::Hexbin { .. } => "Hexbin".to_string(),
@@ -715,6 +728,60 @@ impl ReportItem {
                     ordinal,
                     alpha.unwrap_or(f64::NAN),
                     curve_text,
+                );
+                let data = HashMap::from([
+                    ("id".to_string(), to_json(&id)),
+                    ("log_toggle".to_string(), to_json(log_toggle)),
+                ]);
+                Ok((
+                    registry.render("bar", &data)?,
+                    HashMap::from([(
+                        "datasets".to_string(),
+                        HashMap::from([(id.clone(), js_object)]),
+                    )]),
+                ))
+            }
+            Self::SectionLine {
+                id,
+                names,
+                x_label,
+                y_label,
+                labels,
+                values,
+                section_separators,
+                section_labels,
+                log_toggle,
+            } => {
+                if !registry.has_template("bar") {
+                    registry.register_template_string("bar", from_utf8(BAR_HBS).unwrap())?;
+                }
+                let ordinal = labels.iter().all(|l| l.parse::<f64>().is_ok());
+                let data_text = (0..labels.len())
+                    .cartesian_product(0..names.len())
+                    .map(|(l, n)| {
+                        format!(
+                            "{{'label': '{}', 'name': '{}', 'value': {}}}",
+                            labels[l], names[n], values[n][l]
+                        )
+                    })
+                    .join(",");
+                let data_text = format!("{{'values': [{}]}}", data_text);
+                let section_separator_text =
+                    section_separators.iter().map(|s| s.to_string()).join(",");
+                let section_separator_text = format!("{{'values': [{}]}}", section_separator_text);
+                let section_labels_text =
+                    section_labels.iter().map(|s| format!("'{}'", s)).join(",");
+                let section_labels_text = format!("{{'values': [{}]}}", section_labels_text);
+                let js_object = format!(
+                    "new SectionLine('{}', '{}', '{}', {}, {}, {}, {}, {})",
+                    id,
+                    x_label,
+                    y_label,
+                    log_toggle,
+                    data_text,
+                    ordinal,
+                    section_separator_text,
+                    section_labels_text
                 );
                 let data = HashMap::from([
                     ("id".to_string(), to_json(&id)),

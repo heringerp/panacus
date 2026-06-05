@@ -6,7 +6,8 @@ use crate::analyses::growth::calc_all_growths;
 use crate::analyses::MatrixBasedAnalysis;
 use crate::coverage_matrix::CoverageMatrix;
 use crate::file_formats::gfa_parser::{choose, ThresholdContainer};
-use crate::util::Threshold;
+use crate::html_report::ReportItem;
+use crate::util::{get_default_plot_downloads, Threshold};
 use rayon::prelude::*;
 
 use super::AnalysisSection;
@@ -23,7 +24,7 @@ pub struct SectionGrowth {
 
 impl MatrixBasedAnalysis for SectionGrowth {
     fn get_type(&self) -> String {
-        "Growth".to_string()
+        "SectionGrowth".to_string()
     }
 
     fn generate_table(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<String> {
@@ -33,6 +34,7 @@ impl MatrixBasedAnalysis for SectionGrowth {
         let inner = self.inner.as_ref().unwrap();
         let mut res = String::new();
 
+        log::info!("Section index: {:?}", inner.sections);
         res.push_str(&format!(
             "# {}\n",
             std::env::args().collect::<Vec<String>>().join(" ")
@@ -78,7 +80,58 @@ impl MatrixBasedAnalysis for SectionGrowth {
         matrix: &CoverageMatrix,
     ) -> anyhow::Result<Vec<AnalysisSection>> {
         self.set_inner(matrix)?;
-        Ok(vec![])
+        let id = format!("section-growth-{}", matrix.get_run_id());
+        let table = self.generate_table(matrix)?;
+        let table = format!("`{}`", &table);
+        let hist_aux = &self.inner.as_ref().unwrap().thresholds;
+        let growths = &self.inner.as_ref().unwrap().growths;
+        let sections = &self.inner.as_ref().unwrap().sections;
+        let section_labels = sections.iter().map(|(x, _)| x.to_string()).collect();
+        let section_separators = sections
+            .iter()
+            .skip(1)
+            .map(|(_, y)| *y as f64 - 0.5) // Subtract 0.5 to place the separators in between the groups
+            .collect();
+        let growth_labels = (0..hist_aux.coverage.len())
+            .map(|i| {
+                format!(
+                    "coverage ≥ {}, quorum ≥ {}%",
+                    hist_aux.coverage[i].get_string(),
+                    match hist_aux.quorum[i] {
+                        crate::util::Threshold::Relative(x) => (x * 100.0).to_string(),
+                        crate::util::Threshold::Absolute(x) => (x * 100).to_string(),
+                    }
+                )
+            })
+            .collect::<Vec<_>>();
+        let analysis_section = AnalysisSection {
+            analysis: self.get_type(),
+            run_name: matrix.get_run_name().to_string(),
+            run_id: matrix.get_run_id().to_string(),
+            countable: matrix.get_feature_type().to_string(),
+            id: id.clone(),
+            table: Some(table),
+            plot_downloads: get_default_plot_downloads(),
+            items: vec![ReportItem::SectionLine {
+                id: format!("{id}-{}", matrix.get_feature_type()),
+                names: growth_labels.clone(),
+                x_label: "taxa".to_string(),
+                y_label: format!("#{}s", matrix.get_feature_type()),
+                labels: (0..(growths[0].len())).map(|i| i.to_string()).collect(),
+                values: growths
+                    .iter()
+                    .map(|row| {
+                        row.iter()
+                            .map(|el| if el.is_nan() { 0.0 } else { *el })
+                            .collect()
+                    })
+                    .collect(),
+                section_separators,
+                section_labels,
+                log_toggle: false,
+            }],
+        };
+        Ok(vec![analysis_section])
     }
 }
 

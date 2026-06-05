@@ -29,6 +29,19 @@ class MultiBar {
     }
 }
 
+class SectionLine {
+    constructor(id, x_label, y_label, log_toggle, data, ordinal, separators, section_labels) {
+        this.id = id;
+        this.x_label = x_label;
+        this.y_label = y_label;
+        this.log_toggle = log_toggle;
+        this.data = data;
+        this.ordinal = ordinal;
+        this.separators = separators;
+        this.section_labels = section_labels;
+    }
+}
+
 class Hexbin {
     constructor(id, bins, bin_content) {
         this.id = id;
