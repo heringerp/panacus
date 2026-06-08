@@ -13,14 +13,21 @@ use crate::util::*;
 
 pub fn bufreader_from_compressed_gfa(gfa_file: &str) -> BufReader<Box<dyn Read + Send>> {
     log::info!("loading graph from {}", &gfa_file);
-    let f = std::fs::File::open(gfa_file).expect("Error opening file");
-    let reader: Box<dyn Read + Send> = if gfa_file.ends_with(".gz") {
-        log::info!("assuming that {} is gzip compressed..", &gfa_file);
-        Box::new(MultiGzDecoder::new(f))
+    if let Ok(f) = std::fs::File::open(gfa_file) {
+        let reader: Box<dyn Read + Send> = if gfa_file.ends_with(".gz") {
+            log::info!("assuming that {} is gzip compressed..", &gfa_file);
+            Box::new(MultiGzDecoder::new(f))
+        } else {
+            Box::new(f)
+        };
+        BufReader::new(reader)
     } else {
-        Box::new(f)
-    };
-    BufReader::new(reader)
+        log::error!(
+            "Could not read file {}, please make sure it exists and is readable!",
+            gfa_file
+        );
+        panic!("Could not read input file!")
+    }
 }
 
 pub fn parse_bed_to_path_segments<R: Read>(

@@ -164,7 +164,6 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
 
     if let Some(report) = commands::report::get_instructions(&args) {
         shall_write_html = true;
-        instructions.extend(report?);
         if let Some(report_matches) = args.subcommand_matches("report") {
             dry_run = report_matches.get_flag("dry_run");
             json = report_matches.get_flag("json");
@@ -176,7 +175,10 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
             let mut reader = BufReader::new(f);
             config_content = String::new();
             reader.read_to_string(&mut config_content)?;
+            config_content.push_str("\n---------------------\n");
+            config_content.push_str(serde_yaml::to_string(&report.as_ref().unwrap())?.as_str());
         }
+        instructions.extend(report?);
     }
     if let Some(hist) = commands::hist::get_instructions(&args) {
         instructions.extend(hist?);
