@@ -12,6 +12,7 @@ use crate::analyses::hist::Hist;
 use crate::analyses::info::Info;
 use crate::analyses::node_distribution::NodeDistribution;
 use crate::analyses::ordered_histgrowth::OrderedHistgrowth;
+use crate::analyses::regional_growth::RegionalGrowth;
 use crate::analyses::regional_variation::RegionalVariation;
 use crate::analyses::section_growth::SectionGrowth;
 use crate::analyses::similarity::Similarity;
@@ -87,6 +88,10 @@ pub enum AnalysisParameter {
         #[serde(default = "get_window_size")]
         window_size: usize,
     },
+    RegionalGrowth {
+        #[serde(default = "get_window_size")]
+        window_size: usize,
+    },
     SectionGrowth {
         sections: String,
         coverage: Option<String>,
@@ -134,6 +139,9 @@ impl AnalysisParameter {
             Self::Info => Analysis::MatrixBased(Box::new(Info::new())),
             Self::RegionalVariation { window_size } => {
                 Analysis::MatrixBased(Box::new(RegionalVariation::new(window_size)))
+            }
+            Self::RegionalGrowth { window_size } => {
+                Analysis::MatrixBased(Box::new(RegionalGrowth::new(window_size)))
             }
             _ => unimplemented!("Other analyses have not been yet implemented"),
         }

@@ -1,5 +1,6 @@
 use std::ops::Index;
 
+#[derive(Debug, Clone)]
 pub struct Hist {
     count_of_features: usize,
     hist: Vec<usize>,
@@ -34,6 +35,22 @@ impl Hist {
             run_id: "".to_string(),
             run_name: "".to_string(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.hist.is_empty() || self.hist.iter().all(|&v| v == 0)
+    }
+
+    /// Subtracts correction from h[1], used to correct
+    /// for an increase in singletons often seen in Histograms
+    /// that can be a problem when fitting curves to the Growth
+    /// curve / F_new curve
+    pub fn correct_h1(&mut self, correction: usize) {
+        self.hist[1] -= correction;
+    }
+
+    pub fn get_index(&self) -> impl Iterator<Item = usize> + '_ {
+        0..self.hist.len()
     }
 
     /// Inserts a single feature with a given coverage into the histogram.
