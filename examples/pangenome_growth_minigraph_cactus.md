@@ -25,9 +25,7 @@ grep -ve 'grch38\|chm13' chr22.hprc-v1.1-mc-grch38.paths.txt > chr22.hprc-v1.1-m
 ```shell
 RUST_LOG=info panacus histgrowth -t4 -l 1,2,1,1,1 -q 0,0,1,0.5,0.1 -S -a -s chr22.hprc-v1.1-mc-grch38.paths.haplotypes.txt chr22.hprc-v1.1-mc-grch38.gfa > chr22.hprc-v1.1-mc-grch38.histgrowth.node.tsv
 ```
-5. Visualize coverage histogram and pangenome growth curve with estimated growth parameters:
-```shell
-panacus-visualize -e chr22.hprc-v1.1-mc-grch38.histgrowth.node.tsv > chr22.hprc-v1.1-mc-grch38.histgrowth.node.pdf
-```
+
+5. If you want to visualize the growth curve, use an [HTML report](/examples/html_report.md)
 
 ![coverage histogram and pangenome growth of nodes in chr22.hprc-v1.1-mc-grch38.gfa](/docs/chr22.hprc-v1.1-mc-grch38.histgrowth.node.png?raw=true "coverage and pangenome growth statistics on the HPRC v.1.1 mc-grch38, chr 22")

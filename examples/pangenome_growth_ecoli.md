@@ -17,9 +17,6 @@ zstd -d ecoli50.gfa.zst
 RUST_LOG=info panacus histgrowth ecoli50.gfa -c bp -q 0,1,0.5,0.1 -t 4 > ecoli50.gfa.histgrowth.tsv
 ```
 
-3. Visualize coverage histogram and pangenome growth curve with estimation of growth parameters. Place the legend in the upper left:
-```shell
-panacus-visualize -e -l "upper left" ecoli50.gfa.histgrowth.tsv > ecoli50.gfa.histgrowth.tsv.pdf
-```
+3. If you want to visualize the growth curve, use an [HTML report](/examples/html_report.md)
 
 ![coverage histogram and pangenome growth of bps in ecoli50.gfa](/docs/ecoli50.gfa.histgrowth.png?raw=true "coverage and pangenome growth statistics on the Ecoli50 graph")

@@ -34,9 +34,6 @@ RUST_LOG=info panacus ordered-histgrowth -c bp -t4 -l 1,2,3,42 -S -e hprc-v1.0-m
 (The log will report some errors regarding missing order information of CHM13 paths. These paths will be ignored in the plot, which is the intended
 behavior of this command line call)
 
-5. Visualize growth curve and estimate growth parameters :
-```shell
-panacus-visualize hprc-v1.0-mc-grch38.ordered-histgrowth.bp.tsv > hprc-v1.0-mc-grch38.ordered-histgrowth.bp.pdf
-```
+5. If you want to visualize the ordered-histgrowth, use an [HTML report](/examples/html_report.md)
 
 ![ordered pangenome growth of bps in hprc-v1.0-mc-grch38.gfa](/docs/hprc-v1.0-mc-grch38.ordered-histgrowth.bp.png?raw=true "pangenome growth of non-reference sequence in the HPRC v.1.0 MC GRCh38 graph")
