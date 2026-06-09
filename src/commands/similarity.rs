@@ -2,7 +2,7 @@ use crate::clap_enum_variants_no_all;
 use clap::{arg, Arg, ArgMatches, Command};
 use strum::VariantNames;
 
-use crate::analysis_parameter::{AnalysisParameter, AnalysisRun, ClusterMethod, Grouping};
+use crate::analysis_parameter::{AnalysisParameter, ClusterMethod, FileRun, Grouping};
 use crate::util::CountType;
 
 pub fn get_subcommand() -> Command {
@@ -21,7 +21,7 @@ pub fn get_subcommand() -> Command {
         ])
 }
 
-pub fn get_instructions(args: &ArgMatches) -> Option<anyhow::Result<Vec<AnalysisRun>>> {
+pub fn get_instructions(args: &ArgMatches) -> Option<anyhow::Result<Vec<FileRun>>> {
     if let Some(args) = args.subcommand_matches("similarity") {
         let graph = args
             .get_one::<String>("gfa_file")
@@ -51,18 +51,16 @@ pub fn get_instructions(args: &ArgMatches) -> Option<anyhow::Result<Vec<Analysis
         } else {
             grouping.map(|g| Grouping::Custom(g))
         };
-        let parameters = vec![AnalysisRun::new(
+        let parameters = vec![FileRun::Gfa {
             graph,
-            None,
             subset,
             exclude,
             grouping,
-            false,
-            vec![AnalysisParameter::Similarity {
-                count_type: count,
-                cluster_method,
-            }],
-        )];
+            reference: None,
+            nice: false,
+            count_type: count,
+            analyses: vec![AnalysisParameter::Similarity { cluster_method }],
+        }];
         // log::info!("{parameters:?}");
         Some(Ok(parameters))
     } else {

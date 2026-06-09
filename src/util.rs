@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /* external use */
 use strum_macros::{EnumIter, EnumString, EnumVariantNames};
 
-use crate::graph_broker::ItemId;
+use crate::file_formats::gfa_parser::ItemId;
 
 /* internal use */
 
@@ -45,7 +45,6 @@ pub enum CountType {
     Node,
     Bp,
     Edge,
-    All,
 }
 
 impl Default for CountType {
@@ -63,7 +62,6 @@ impl fmt::Display for CountType {
                 CountType::Node => "node",
                 CountType::Edge => "edge",
                 CountType::Bp => "bp",
-                CountType::All => "all",
             }
         )
     }
@@ -79,8 +77,8 @@ pub fn get_default_plot_downloads() -> Vec<(String, String)> {
 
 #[derive(Debug, Clone)]
 pub struct ItemTable {
-    pub items: Vec<ItemIdSize>,
-    pub id_prefsum: Vec<ItemIdSize>,
+    pub items: Vec<ItemIdSize>, // For each path, each feature in one long list
+    pub id_prefsum: Vec<ItemIdSize>, // In the items list, where (at what index) does each new path start (+ length)
 }
 
 impl ItemTable {
@@ -92,29 +90,7 @@ impl ItemTable {
     }
 }
 
-// pub struct InfixEqStorage {
-//     pub edges: [u32; 16],
-//     pub last_edge: u8,
-//     pub last_group: u32,
-//     pub sigma: u32, //#edges + psi
-// }
-
-// impl InfixEqStorage {
-//     pub fn new() -> Self {
-//         let edges = [0; 16];
-//         let last_edge = 0;
-//         let last_group = 0;
-//         let sigma = 0;
-//         Self {
-//             edges,
-//             last_edge,
-//             last_group,
-//             sigma,
-//         }
-//     }
-// }
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ActiveTable {
     pub items: Vec<bool>,
     // intervall container + item len vector
@@ -193,6 +169,14 @@ impl ActiveTable {
 
     pub fn with_annotation(&self) -> bool {
         self.annotation.is_some()
+    }
+
+    pub fn get_annotation_keys(&self) -> impl Iterator<Item = &ItemId> + '_ {
+        self.annotation
+            .as_ref()
+            .map(|x| x.keys())
+            .into_iter()
+            .flatten()
     }
 }
 
@@ -398,6 +382,9 @@ pub fn is_contained(v: &[(usize, usize)], el: &(usize, usize)) -> bool {
 }
 
 pub fn averageu32(v: &[u32]) -> f32 {
+    if v.len() == 0 {
+        return 0.0;
+    }
     (v.iter().map(|x| *x as u64).sum::<u64>() as f64 / v.len() as f64) as f32
 }
 
@@ -520,11 +507,6 @@ pub fn revcmp(kmer: u64, k: usize) -> u64 {
         >> (64 - k as u64 * 2)
 }
 
-// pub fn get_infix(kmer_bits: u64, k: usize) -> u64 {
-//     let mask: u64 = (1 << (2 * (k - 1))) - 1;
-//     (kmer_bits >> 2) & mask
-// }
-
 #[allow(dead_code)]
 pub fn canonical(kmer_bits: u64, k: usize) -> u64 {
     let kmer_bits_rc = revcmp(kmer_bits, k);
@@ -541,18 +523,11 @@ pub fn to_id(s: &str) -> String {
         .replace(&[' ', '|', '/', '\\', '\'', '"'], "-")
 }
 
-//pub fn log2_add(a: f64, b: f64) -> f64 {
-//    // we assume both a and b are log2'd
-//    let (a, b) = if a < b { (a, b) } else { (b, a) };
-//
-//    b + (1.0 + (a - b).exp2()).log2()
-//}
-
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use crate::graph_broker::ItemId;
+    use crate::file_formats::gfa_parser::ItemId;
 
     #[test]
     fn test_interval_container() {

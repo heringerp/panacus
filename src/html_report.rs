@@ -13,7 +13,6 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use time::{macros::format_description, OffsetDateTime};
 
-use crate::graph_broker::{GraphBroker, ItemId};
 use crate::util::{get_default_plot_downloads, to_id};
 use shadow_rs::shadow;
 
@@ -39,6 +38,7 @@ pub const BAR_HBS: &[u8] = include_bytes!("../hbs/bar.hbs");
 pub const TREE_HBS: &[u8] = include_bytes!("../hbs/tree.hbs");
 pub const TABLE_HBS: &[u8] = include_bytes!("../hbs/table.hbs");
 pub const HEATMAP_HBS: &[u8] = include_bytes!("../hbs/heatmap.hbs");
+pub const CHROMOSOMAL_HBS: &[u8] = include_bytes!("../hbs/chromosomal.hbs");
 pub const ANALYSIS_TAB_HBS: &[u8] = include_bytes!("../hbs/analysis_tab.hbs");
 pub const REPORT_CONTENT_HBS: &[u8] = include_bytes!("../hbs/report_content.hbs");
 pub const HEXBIN_HBS: &[u8] = include_bytes!("../hbs/hexbin.hbs");
@@ -79,6 +79,8 @@ impl AnalysisSection {
                 .iter()
                 .map(|item| HashMap::from([("id", item.get_id()), ("name", item.get_name())]))
                 .collect()
+        } else if self.items.len() == 0 {
+            vec![]
         } else {
             vec![HashMap::from([
                 ("id", self.items[0].get_id()),
@@ -102,7 +104,7 @@ impl AnalysisSection {
         let js_objects = js_objects
             .into_iter()
             .reduce(combine_vars)
-            .expect("Tab has at least one item");
+            .unwrap_or_default();
         let plot_downloads: Vec<HashMap<&str, String>> = self
             .plot_downloads
             .iter()
@@ -129,11 +131,7 @@ impl AnalysisSection {
         Ok((registry.render("analysis_tab", &vars)?, js_objects))
     }
 
-    pub fn generate_custom_section(
-        gb: &GraphBroker,
-        name: String,
-        file: String,
-    ) -> anyhow::Result<Vec<Self>> {
+    pub fn generate_custom_section(name: String, file: String) -> anyhow::Result<Vec<Self>> {
         let id = name.to_lowercase().replace(&[' ', '|', '\\'], "-");
         let id = format!("custom-{id}");
         let mut table: Option<String> = None;
@@ -199,8 +197,8 @@ impl AnalysisSection {
         Ok(vec![AnalysisSection {
             id: id,
             analysis: "Custom".to_string(),
-            run_name: gb.get_run_name(),
-            run_id: gb.get_run_id(),
+            run_name: "My Custom Run".to_string(),
+            run_id: "MyCustomRun".to_string(),
             countable: name,
             table,
             items: vec![report_item],
@@ -426,6 +424,19 @@ pub enum ReportItem {
         labels: Vec<String>,
         values: Vec<Vec<f64>>,
         log_toggle: bool,
+        curve: Option<Vec<f64>>,
+        alpha: Option<f64>,
+    },
+    SectionLine {
+        id: String,
+        names: Vec<String>,
+        x_label: String,
+        y_label: String,
+        labels: Vec<String>,
+        values: Vec<Vec<f64>>,
+        section_separators: Vec<f64>,
+        section_labels: Vec<String>,
+        log_toggle: bool,
     },
     Table {
         id: String,
@@ -435,6 +446,7 @@ pub enum ReportItem {
     Hexbin {
         id: String,
         bins: Vec<Bin>,
+        threshold: usize,
     },
     Heatmap {
         id: String,
@@ -469,6 +481,15 @@ pub enum ReportItem {
         id: String,
         file: String,
     },
+    Chromosomal {
+        id: String,
+        name: String,
+        labels: Vec<String>,
+        is_diverging: bool,
+        contains_outliers: bool,
+        sequence: String,
+        values: Vec<Window>,
+    },
 }
 
 impl ReportItem {
@@ -476,6 +497,7 @@ impl ReportItem {
         match self {
             Self::Bar { id, .. } => id.to_string(),
             Self::MultiBar { id, .. } => id.to_string(),
+            Self::SectionLine { id, .. } => id.to_string(),
             Self::Table { id, .. } => id.to_string(),
             Self::Heatmap { id, .. } => id.to_string(),
             Self::Hexbin { id, .. } => id.to_string(),
@@ -484,6 +506,7 @@ impl ReportItem {
             Self::Svg { id, .. } => id.to_string(),
             Self::Json { id, .. } => id.to_string(),
             Self::Pdf { id, .. } => id.to_string(),
+            Self::Chromosomal { id, .. } => id.to_string(),
         }
     }
 
@@ -491,6 +514,7 @@ impl ReportItem {
         match self {
             Self::Bar { name, .. } => name.to_string(),
             Self::MultiBar { .. } => "MultiBar".to_string(),
+            Self::SectionLine { .. } => "SectionLine".to_string(),
             Self::Table { .. } => "Table".to_string(),
             Self::Heatmap { name, .. } => name.to_string(),
             Self::Hexbin { .. } => "Hexbin".to_string(),
@@ -499,6 +523,7 @@ impl ReportItem {
             Self::Svg { .. } => "Svg".to_string(),
             Self::Json { .. } => "Json".to_string(),
             Self::Pdf { .. } => "Pdf".to_string(),
+            Self::Chromosomal { .. } => "Chromosomal".to_string(),
         }
     }
 
@@ -559,6 +584,64 @@ impl ReportItem {
                     )]),
                 ))
             }
+            Self::Chromosomal {
+                id,
+                name,
+                labels,
+                is_diverging,
+                contains_outliers,
+                sequence,
+                values,
+            } => {
+                if !registry.has_template("chromosomal") {
+                    registry.register_template_string(
+                        "chromosomal",
+                        from_utf8(CHROMOSOMAL_HBS).unwrap(),
+                    )?;
+                }
+
+                let mut values = values;
+                for i in 0..values.len() {
+                    if i == values.len() - 1 {
+                        continue;
+                    }
+
+                    // if two following values are continuous
+                    // introduce overlap in plot (avoids gaps due to rounding errors)
+                    if values[i].end == values[i + 1].start {
+                        values.get_mut(i).expect("values has value").end = values[i + 1].end;
+                    }
+                }
+
+                let data: Vec<String> = values
+                    .into_iter()
+                    .map(|w| {
+                        let mut text = format!("{{'x': {}, 'x2': {}", w.start, w.end,);
+                        for (i, label) in labels.iter().enumerate() {
+                            text.push_str(&format!(", '{}': {}", label, w.values[i]));
+                        }
+                        text.push_str("}");
+                        text
+                    })
+                    .collect();
+                let mut data_text = "{'values': [".to_string();
+                for datum in data {
+                    data_text.push_str(&datum);
+                    data_text.push_str(", ");
+                }
+                data_text.push_str("]}");
+                let js_object = format!(
+                    "new Chromosomal('{id}', '{name}', {:?}, {is_diverging}, {contains_outliers}, '{sequence}', {data_text})", labels
+                );
+                let data = HashMap::from([("id".to_string(), to_json(&id))]);
+                Ok((
+                    registry.render("chromosomal", &data)?,
+                    HashMap::from([(
+                        "datasets".to_string(),
+                        HashMap::from([(id.clone(), js_object)]),
+                    )]),
+                ))
+            }
             Self::Bar {
                 id,
                 name,
@@ -607,10 +690,13 @@ impl ReportItem {
                 labels,
                 values,
                 log_toggle,
+                curve,
+                alpha,
             } => {
                 if !registry.has_template("bar") {
                     registry.register_template_string("bar", from_utf8(BAR_HBS).unwrap())?;
                 }
+                let ordinal = labels.iter().all(|l| l.parse::<f64>().is_ok());
                 let data_text = (0..labels.len())
                     .cartesian_product(0..names.len())
                     .map(|(l, n)| {
@@ -621,9 +707,27 @@ impl ReportItem {
                     })
                     .join(",");
                 let data_text = format!("{{'values': [{}]}}", data_text);
+                let curve_text = match curve {
+                    Some(c) => {
+                        let curve_text = labels
+                            .iter()
+                            .zip(c)
+                            .map(|(l, c)| format!("{{'label': '{}', 'value': {}}}", l, c))
+                            .join(",");
+                        format!("{{'values': [{}]}}", curve_text)
+                    }
+                    None => "{}".to_string(),
+                };
                 let js_object = format!(
-                    "new MultiBar('{}', '{}', '{}', {}, {})",
-                    id, x_label, y_label, log_toggle, data_text
+                    "new MultiBar('{}', '{}', '{}', {}, {}, {}, {}, {})",
+                    id,
+                    x_label,
+                    y_label,
+                    log_toggle,
+                    data_text,
+                    ordinal,
+                    alpha.unwrap_or(f64::NAN),
+                    curve_text,
                 );
                 let data = HashMap::from([
                     ("id".to_string(), to_json(&id)),
@@ -637,7 +741,65 @@ impl ReportItem {
                     )]),
                 ))
             }
-            Self::Hexbin { id, bins } => {
+            Self::SectionLine {
+                id,
+                names,
+                x_label,
+                y_label,
+                labels,
+                values,
+                section_separators,
+                section_labels,
+                log_toggle,
+            } => {
+                if !registry.has_template("bar") {
+                    registry.register_template_string("bar", from_utf8(BAR_HBS).unwrap())?;
+                }
+                let ordinal = labels.iter().all(|l| l.parse::<f64>().is_ok());
+                let data_text = (0..labels.len())
+                    .cartesian_product(0..names.len())
+                    .map(|(l, n)| {
+                        format!(
+                            "{{'label': '{}', 'name': '{}', 'value': {}}}",
+                            labels[l], names[n], values[n][l]
+                        )
+                    })
+                    .join(",");
+                let data_text = format!("{{'values': [{}]}}", data_text);
+                let section_separator_text =
+                    section_separators.iter().map(|s| s.to_string()).join(",");
+                let section_separator_text = format!("{{'values': [{}]}}", section_separator_text);
+                let section_labels_text =
+                    section_labels.iter().map(|s| format!("'{}'", s)).join(",");
+                let section_labels_text = format!("{{'values': [{}]}}", section_labels_text);
+                let js_object = format!(
+                    "new SectionLine('{}', '{}', '{}', {}, {}, {}, {}, {})",
+                    id,
+                    x_label,
+                    y_label,
+                    log_toggle,
+                    data_text,
+                    ordinal,
+                    section_separator_text,
+                    section_labels_text
+                );
+                let data = HashMap::from([
+                    ("id".to_string(), to_json(&id)),
+                    ("log_toggle".to_string(), to_json(log_toggle)),
+                ]);
+                Ok((
+                    registry.render("bar", &data)?,
+                    HashMap::from([(
+                        "datasets".to_string(),
+                        HashMap::from([(id.clone(), js_object)]),
+                    )]),
+                ))
+            }
+            Self::Hexbin {
+                id,
+                bins,
+                threshold,
+            } => {
                 if !registry.has_template("hexbin") {
                     registry.register_template_string("hexbin", from_utf8(HEXBIN_HBS).unwrap())?;
                 }
@@ -651,8 +813,11 @@ impl ReportItem {
                 js_object.push_str("]}, [");
                 for (_i, bin) in bins.into_iter().enumerate() {
                     js_object.push_str(&format!("[",));
-                    for node in bin.content {
-                        js_object.push_str(&format!("{},", node.0,));
+                    for node in bin.content.iter().take(threshold) {
+                        js_object.push_str(&format!("'{}',", node,));
+                    }
+                    if threshold < bin.content.len() {
+                        js_object.push_str("-1, ");
                     }
                     js_object.push_str("],");
                 }
@@ -788,7 +953,7 @@ pub struct Bin {
     pub size: u64,
     pub x: f64,
     pub y: f64,
-    pub content: Vec<ItemId>,
+    pub content: Vec<String>,
 }
 
 impl fmt::Display for Bin {
@@ -802,13 +967,13 @@ impl fmt::Display for Bin {
 }
 
 impl Bin {
-    pub fn hexbin(points: &Vec<(ItemId, u32, f64)>, nx: u32, ny: u32) -> Vec<Self> {
+    pub fn hexbin(points: &Vec<(String, u32, f64)>, nx: u32, ny: u32) -> Vec<Self> {
         let max_coverage = points
             .iter()
             .map(|(_i, c, _l)| *c)
             .max()
             .expect("At least one point");
-        let max_length = points.iter().map(|(_i, _c, l)| *l).fold(0. / 0., f64::max);
+        let max_length = points.iter().map(|(_i, _c, l)| *l).fold(0.04, f64::max);
         let dx = max_coverage as f64 / (nx - 1) as f64;
         let _t = dx as f64 / 3f64.sqrt();
         let dy = max_length / (ny - 1) as f64;
@@ -843,7 +1008,7 @@ impl Bin {
                         content: Vec::new(),
                     })
                     .content
-                    .push(point.0);
+                    .push(point.0.clone());
             } else {
                 bins.entry((
                     true,
@@ -857,7 +1022,7 @@ impl Bin {
                     content: Vec::new(),
                 })
                 .content
-                .push(point.0);
+                .push(point.0.clone());
             }
         }
         let mut bins: Vec<Bin> = bins.into_values().collect();
@@ -870,4 +1035,11 @@ impl Bin {
     fn distance(x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
         (((x1 - x2).powf(2.0) + (y1 - y2).powf(2.0)) as f64).sqrt()
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Window {
+    pub start: usize,
+    pub end: usize,
+    pub values: Vec<f64>,
 }

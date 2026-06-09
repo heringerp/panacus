@@ -17,12 +17,28 @@ class Bar {
 }
 
 class MultiBar {
-    constructor(id, x_label, y_label, log_toggle, data) {
+    constructor(id, x_label, y_label, log_toggle, data, ordinal, alpha, heaps_curve) {
         this.id = id;
         this.x_label = x_label;
         this.y_label = y_label;
         this.log_toggle = log_toggle;
         this.data = data;
+        this.ordinal = ordinal;
+        this.alpha = alpha;
+        this.heaps_curve = heaps_curve;
+    }
+}
+
+class SectionLine {
+    constructor(id, x_label, y_label, log_toggle, data, ordinal, separators, section_labels) {
+        this.id = id;
+        this.x_label = x_label;
+        this.y_label = y_label;
+        this.log_toggle = log_toggle;
+        this.data = data;
+        this.ordinal = ordinal;
+        this.separators = separators;
+        this.section_labels = section_labels;
     }
 }
 
@@ -39,6 +55,18 @@ class Heatmap {
         this.id = id;
         this.name = name;
         this.data_set = data_set;
+    }
+}
+
+class Chromosomal {
+    constructor(id, name, labels, diverging, contains_outliers, sequence, data) {
+        this.id = id;
+        this.name = name;
+        this.labels = labels;
+        this.diverging = diverging;
+        this.contains_outliers = contains_outliers;
+        this.sequence = sequence;
+        this.data = data;
     }
 }
 

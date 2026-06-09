@@ -1,10 +1,10 @@
-use std::fs::File;
 use std::io::BufReader;
+use std::{fs::File, io::Read};
 
 use anyhow::anyhow;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
-use crate::analysis_parameter::AnalysisRun;
+use crate::analysis_parameter::FileRun;
 
 pub fn get_subcommand() -> Command {
     Command::new("report")
@@ -27,11 +27,11 @@ pub fn get_subcommand() -> Command {
                 .action(ArgAction::SetTrue)
                 .help(
                     "Instead of an HTML report, a json result will be delivered. These can later be combined and rendered as a single HTML.",
-                )
-        ])
+            )])
+        .arg(Arg::new("variable").short('r').long("variable").action(ArgAction::Append).help("A variable in the format --variable MYVAR=\"test_text\". This will replace the string \"{{MYVAR}}\" in the YAML file with \"test_text\""))
 }
 
-pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, anyhow::Error>> {
+pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<FileRun>, anyhow::Error>> {
     if let Some(args) = args.subcommand_matches("report") {
         Some(parse_report_args(args))
     } else {
@@ -39,11 +39,30 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<AnalysisRun>, an
     }
 }
 
-fn parse_report_args(args: &ArgMatches) -> Result<Vec<AnalysisRun>, anyhow::Error> {
+fn parse_report_args(args: &ArgMatches) -> Result<Vec<FileRun>, anyhow::Error> {
     if let Some(yaml_file) = args.get_one::<String>("yaml_file").cloned() {
         let f = File::open(yaml_file)?;
-        let reader = BufReader::new(f);
-        let contents = serde_yaml::from_reader(reader)?;
+        let mut reader = BufReader::new(f);
+        let mut buffer = String::new();
+        reader.read_to_string(&mut buffer)?;
+        let variables = args
+            .get_many::<String>("variable")
+            .unwrap_or_default()
+            .map(|v| v.as_str())
+            .collect::<Vec<_>>();
+        for variable in variables {
+            let mut iter = variable.split("=");
+            let key = iter.next().ok_or_else(|| {
+                anyhow!("Empty variable parameter, use it like --variable KEY=value")
+            })?;
+            let value = iter.next().ok_or_else(|| {
+                anyhow!("Variable parameter without '=', use it like --variable KEY=value")
+            })?;
+            // Turns into "{{KEY}}"
+            let text = format!("{{{{{key}}}}}");
+            buffer = buffer.replace(text.as_str(), value);
+        }
+        let contents = serde_yaml::from_str(&buffer)?;
         Ok(contents)
     } else {
         println!(

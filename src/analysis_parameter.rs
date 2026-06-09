@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fmt;
 use std::fmt::Debug;
 use std::fmt::Display;
@@ -6,191 +5,78 @@ use strum_macros::{EnumIter, EnumString, EnumVariantNames};
 
 use serde::{Deserialize, Serialize};
 
-use crate::analyses::ConstructibleAnalysis;
-use crate::analyses::{
-    coverage_line::CoverageLine, growth::Growth, info::Info, node_distribution::NodeDistribution,
-    ordered_histgrowth::OrderedHistgrowth, similarity::Similarity, table::Table,
-};
-use crate::Analysis;
-use crate::{
-    analyses::{hist::Hist, InputRequirement},
-    util::CountType,
-};
-
-macro_rules! get_analysis_task {
-    ($t:ty, $v:expr) => {{
-        let a = <$t>::from_parameter($v);
-        let reqs = a.get_graph_requirements();
-        let mut tasks = Vec::new();
-        tasks.push(Task::Analysis(Box::new(a)));
-        (tasks, reqs)
-    }};
-}
-
-pub enum Task {
-    Analysis(Box<dyn Analysis>),
-    GraphStateChange {
-        graph: String,
-        name: Option<String>,
-        reqs: HashSet<InputRequirement>,
-        nice: bool,
-        subset: String,
-        exclude: String,
-        grouping: Option<Grouping>,
-    },
-    OrderChange(Option<String>),
-    AbacusByGroupCSCChange,
-    CustomSection {
-        name: String,
-        file: String,
-    },
-}
-
-impl Debug for Task {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Analysis(analysis) => write!(f, "Analysis {}", analysis.get_type()),
-            Self::GraphStateChange {
-                graph,
-                name,
-                reqs,
-                nice,
-                subset,
-                exclude,
-                grouping,
-            } => f
-                .debug_tuple("GraphStateChange")
-                .field(graph)
-                .field(name)
-                .field(subset)
-                .field(exclude)
-                .field(grouping)
-                .field(&reqs)
-                .field(nice)
-                .finish(),
-            Self::OrderChange(order) => f.debug_tuple("OrderChange").field(&order).finish(),
-            Self::AbacusByGroupCSCChange => f.debug_tuple("AbacusByGroupCSCChange").finish(),
-            Self::CustomSection { name, file } => f
-                .debug_tuple("CustomSection")
-                .field(name)
-                .field(file)
-                .finish(),
-        }
-    }
-}
+use crate::analyses::coverage_colors::CoverageColors;
+use crate::analyses::coverage_line::CoverageLine;
+use crate::analyses::growth::Growth;
+use crate::analyses::hist::Hist;
+use crate::analyses::info::Info;
+use crate::analyses::node_distribution::NodeDistribution;
+use crate::analyses::ordered_histgrowth::OrderedHistgrowth;
+use crate::analyses::regional_growth::RegionalGrowth;
+use crate::analyses::regional_variation::RegionalVariation;
+use crate::analyses::section_growth::SectionGrowth;
+use crate::analyses::similarity::Similarity;
+use crate::analyses::table::Table;
+use crate::analyses::Analysis;
+use crate::file_formats::vcf_parser::VcfCountType;
+use crate::util::CountType;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
-pub struct AnalysisRun {
-    graph: String,
-    name: Option<String>,
-    #[serde(default)]
-    subset: String,
-    #[serde(default)]
-    exclude: String,
-    grouping: Option<Grouping>,
-    #[serde(default)]
-    nice: bool,
-    analyses: Vec<AnalysisParameter>,
-}
-
-impl AnalysisRun {
-    pub fn new(
+pub enum FileRun {
+    Gfa {
         graph: String,
-        name: Option<String>,
+        #[serde(default)]
         subset: String,
+        #[serde(default)]
         exclude: String,
+        reference: Option<String>,
         grouping: Option<Grouping>,
+        #[serde(default)]
         nice: bool,
+        count_type: CountType,
         analyses: Vec<AnalysisParameter>,
-    ) -> Self {
-        Self {
-            graph,
-            name,
-            subset,
-            exclude,
-            grouping,
-            nice,
-            analyses,
-        }
-    }
-
-    pub fn convert_to_tasks(mut runs: Vec<Self>) -> Vec<Task> {
-        runs.sort();
-        let mut tasks = Vec::new();
-        for i in 0..runs.len() {
-            let (current_tasks, mut input_req) = runs[i].to_tasks();
-            input_req.insert(InputRequirement::Graph(runs[i].graph.clone()));
-            tasks.push(Task::GraphStateChange {
-                graph: std::mem::take(&mut runs[i].graph),
-                name: std::mem::take(&mut runs[i].name),
-                reqs: input_req,
-                nice: runs[i].nice,
-                subset: std::mem::take(&mut runs[i].subset),
-                exclude: std::mem::take(&mut runs[i].exclude),
-                grouping: std::mem::take(&mut runs[i].grouping),
-            });
-            tasks.extend(current_tasks);
-        }
-        tasks
-    }
-
-    pub fn to_tasks(&mut self) -> (Vec<Task>, HashSet<InputRequirement>) {
-        let mut analyses = std::mem::take(&mut self.analyses);
-        analyses.sort();
-        let (tasks, requirements): (Vec<Vec<Task>>, Vec<HashSet<InputRequirement>>) =
-            analyses.into_iter().map(|a| a.into_tasks()).unzip();
-        let tasks: Vec<Task> = tasks.into_iter().flatten().collect();
-        let requirements: HashSet<InputRequirement> =
-            requirements
-                .into_iter()
-                .fold(HashSet::new(), |mut acc, el| {
-                    acc.extend(el);
-                    acc
-                });
-        (tasks, requirements)
-    }
+    },
+    Vcf {
+        file: String,
+        #[serde(default)]
+        split_haplotypes: bool,
+        #[serde(default)]
+        count_type: VcfCountType,
+        analyses: Vec<AnalysisParameter>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
 pub enum AnalysisParameter {
-    Hist {
-        #[serde(default)]
-        count_type: CountType,
-    },
+    Hist {},
     Growth {
         coverage: Option<String>,
         quorum: Option<String>,
         #[serde(default)]
         add_hist: bool,
+        #[serde(default)]
+        add_alpha: bool,
     },
     Table {
-        #[serde(default)]
-        count_type: CountType,
-
         total: bool,
         order: Option<String>,
     },
     NodeDistribution {
         #[serde(default = "get_radius")]
         radius: u32,
+        #[serde(default = "get_threshold")]
+        threshold: usize,
     },
     Info,
     OrderedGrowth {
         coverage: Option<String>,
         quorum: Option<String>,
         order: Option<String>,
-
-        #[serde(default)]
-        count_type: CountType,
     },
     CoverageLine {
-        #[serde(default)]
-        count_type: CountType,
-        reference: String,
+        reference: Option<String>,
     },
     Similarity {
-        #[serde(default)]
-        count_type: CountType,
         #[serde(default)]
         cluster_method: ClusterMethod,
     },
@@ -198,6 +84,68 @@ pub enum AnalysisParameter {
         name: String,
         file: String,
     },
+    RegionalVariation {
+        #[serde(default = "get_window_size")]
+        window_size: usize,
+    },
+    RegionalGrowth {
+        #[serde(default = "get_window_size")]
+        window_size: usize,
+    },
+    SectionGrowth {
+        sections: String,
+        coverage: Option<String>,
+        quorum: Option<String>,
+    },
+    CoverageColors,
+}
+
+impl AnalysisParameter {
+    /// This match has to be extended when adding a new analysis. Each analysis
+    /// needs to decide, whether it needs the full matrix or whether just the
+    /// hist is fine. Just using the histogram is always preferred.
+    pub fn to_analysis(self) -> Analysis {
+        match self {
+            Self::Hist {} => Analysis::HistBased(Box::new(Hist::new())),
+            Self::Growth {
+                coverage,
+                quorum,
+                add_hist,
+                add_alpha,
+            } => Analysis::HistBased(Box::new(Growth::new(coverage, quorum, add_hist, add_alpha))),
+            Self::Table { total, order } => {
+                Analysis::MatrixBased(Box::new(Table::new(total, order)))
+            }
+            Self::OrderedGrowth {
+                coverage,
+                quorum,
+                order,
+            } => Analysis::MatrixBased(Box::new(OrderedHistgrowth::new(coverage, quorum, order))),
+            Self::NodeDistribution { radius, threshold } => {
+                Analysis::MatrixBased(Box::new(NodeDistribution::new(radius, threshold)))
+            }
+            Self::CoverageColors {} => Analysis::MatrixBased(Box::new(CoverageColors::new())),
+            Self::CoverageLine { reference } => {
+                Analysis::MatrixBased(Box::new(CoverageLine::new(reference)))
+            }
+            Self::SectionGrowth {
+                sections,
+                coverage,
+                quorum,
+            } => Analysis::MatrixBased(Box::new(SectionGrowth::new(sections, coverage, quorum))),
+            Self::Similarity { cluster_method } => {
+                Analysis::MatrixBased(Box::new(Similarity::new(cluster_method)))
+            }
+            Self::Info => Analysis::MatrixBased(Box::new(Info::new())),
+            Self::RegionalVariation { window_size } => {
+                Analysis::MatrixBased(Box::new(RegionalVariation::new(window_size)))
+            }
+            Self::RegionalGrowth { window_size } => {
+                Analysis::MatrixBased(Box::new(RegionalGrowth::new(window_size)))
+            }
+            _ => unimplemented!("Other analyses have not been yet implemented"),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
@@ -221,41 +169,12 @@ fn get_radius() -> u32 {
     20
 }
 
-impl AnalysisParameter {
-    pub fn into_tasks(self) -> (Vec<Task>, HashSet<InputRequirement>) {
-        match self {
-            h @ Self::Hist { .. } => {
-                get_analysis_task!(Hist, h)
-            }
-            g @ Self::Growth { .. } => {
-                get_analysis_task!(Growth, g)
-            }
-            n @ Self::NodeDistribution { .. } => {
-                get_analysis_task!(NodeDistribution, n)
-            }
-            i @ Self::Info => {
-                get_analysis_task!(Info, i)
-            }
-            ref o @ Self::OrderedGrowth { ref order, .. } => {
-                let mut tasks = vec![Task::OrderChange(order.clone())];
-                let (ordered_task, reqs) = get_analysis_task!(OrderedHistgrowth, o.clone());
-                tasks.extend(ordered_task);
-                (tasks, reqs)
-            }
-            c @ Self::CoverageLine { .. } => {
-                get_analysis_task!(CoverageLine, c)
-            }
-            s @ Self::Similarity { .. } => {
-                get_analysis_task!(Similarity, s)
-            }
-            t @ Self::Table { .. } => {
-                get_analysis_task!(Table, t)
-            }
-            Self::Custom { name, file } => {
-                (vec![Task::CustomSection { name, file }], HashSet::new())
-            }
-        }
-    }
+fn get_window_size() -> usize {
+    1_000_000
+}
+
+fn get_threshold() -> usize {
+    1_000
 }
 
 #[derive(

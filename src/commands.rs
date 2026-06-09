@@ -1,10 +1,11 @@
+pub mod coverage_colors;
 pub mod growth;
 pub mod hist;
-pub mod histgrowth;
 pub mod info;
 pub mod node_distribution;
 pub mod ordered_histgrowth;
 pub mod render;
 pub mod report;
+pub mod section_growth;
 pub mod similarity;
 pub mod table;

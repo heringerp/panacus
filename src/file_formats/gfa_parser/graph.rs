@@ -1,11 +1,13 @@
 /* standard use */
 use once_cell::sync::Lazy;
 use regex::Regex;
+// use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
 use std::io::BufRead;
 use std::str::{self, FromStr};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /* private use */
 use crate::io::bufreader_from_compressed_gfa;
@@ -16,6 +18,8 @@ use serde::{Deserialize, Serialize};
 static PATHID_PANSN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^([^#]+)(#[^#]+)?(#[^#].*)?$").unwrap());
 static PATHID_COORDS: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(.+):([0-9]+)-([0-9]+)$").unwrap());
+
+static METHOD_CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Orientation {
@@ -166,7 +170,8 @@ pub fn get_extremities(node_dna: &[u8], k: usize) -> (u64, u64) {
 
 #[derive(Debug, Clone)]
 pub struct GraphStorage {
-    node2id: HashMap<Vec<u8>, ItemId>,
+    pub node2id: HashMap<Vec<u8>, ItemId>,
+    pub node2rule_id: Vec<usize>,
     is_nice: bool,
     pub node_lens: Vec<u32>,
     pub edge2id: Option<HashMap<Edge, ItemId>>,
@@ -181,7 +186,8 @@ impl GraphStorage {
     #[cfg(test)]
     pub fn from_path_segments(path_segments: Vec<PathSegment>) -> Self {
         Self {
-            node2id: HashMap::new(),
+            node2id: HashMap::default(),
+            node2rule_id: Vec::new(),
             node_lens: Vec::new(),
             edge2id: None,
             path_segments,
@@ -192,10 +198,10 @@ impl GraphStorage {
         }
     }
 
-    pub fn from_gfa(gfa_file: &str, is_nice: bool, count_type: CountType) -> Self {
-        let (node2id, path_segments, node_lens, _extremities) =
+    pub fn from_gfa(gfa_file: &str, is_nice: bool) -> (Self, bool) {
+        let (node2id, node2rule_id, path_segments, node_lens, _extremities, has_meta_node) =
             Self::parse_nodes_gfa(gfa_file, None);
-        let index_edges: bool = (count_type == CountType::Edge) | (count_type == CountType::All);
+        let index_edges: bool = true;
         let (edge2id, edge_count, degree) = if index_edges {
             let (edge2id, edge_count, degree) = Self::parse_edge_gfa(gfa_file, &node2id);
             (Some(edge2id), edge_count, Some(degree))
@@ -205,21 +211,26 @@ impl GraphStorage {
         let node_count = node2id.len();
         log::debug!("Done creating GraphStorage");
 
-        Self {
-            node2id,
-            is_nice,
-            node_lens,
-            edge2id,
-            path_segments,
-            node_count,
-            edge_count,
-            degree,
-            // extremities,
-        }
+        (
+            Self {
+                node2id,
+                node2rule_id,
+                is_nice,
+                node_lens,
+                edge2id,
+                path_segments,
+                node_count,
+                edge_count,
+                degree,
+                // extremities,
+            },
+            has_meta_node,
+        )
     }
 
     #[inline]
     pub fn get_node_id(&self, node_name: &[u8]) -> Option<ItemId> {
+        METHOD_CALL_COUNT.fetch_add(1, Ordering::Relaxed);
         // self.node2id.get(node_name).cloned()
         if self.is_nice {
             unsafe {
@@ -230,6 +241,10 @@ impl GraphStorage {
         } else {
             self.node2id.get(node_name).cloned()
         }
+    }
+
+    pub fn get_call_count(&self) -> usize {
+        METHOD_CALL_COUNT.load(Ordering::Relaxed)
     }
 
     pub fn get_nodes(&self) -> Vec<ItemId> {
@@ -243,24 +258,6 @@ impl GraphStorage {
             .collect()
     }
 
-    // pub fn from_cdbg_gfa(gfa_file: &str, k: usize) -> Self {
-    //     let (node2id, path_segments, node_lens, extremities) =
-    //         Self::parse_nodes_gfa(gfa_file, Some(k));
-    //     let (edge2id, edge_count, degree) = (None, 0, None);
-    //     let node_count = node2id.len();
-
-    //     Self {
-    //         node2id,
-    //         node_lens,
-    //         edge2id,
-    //         path_segments,
-    //         node_count,
-    //         edge_count,
-    //         degree,
-    //         extremities,
-    //     }
-    // }
-
     pub fn node_len(&self, v: &ItemId) -> u32 {
         self.node_lens[v.0 as usize]
     }
@@ -269,7 +266,6 @@ impl GraphStorage {
         match c {
             &CountType::Node | &CountType::Bp => self.node_count,
             &CountType::Edge => self.edge_count,
-            &CountType::All => unreachable!("inadmissible count type"),
         }
     }
 
@@ -310,11 +306,26 @@ impl GraphStorage {
         k: Option<usize>,
     ) -> (
         HashMap<Vec<u8>, ItemId>,
+        Vec<usize>,
         Vec<PathSegment>,
         Vec<u32>,
         Option<Vec<(u64, u64)>>,
+        bool, // Whether there was a meta node
     ) {
-        let mut node2id: HashMap<Vec<u8>, ItemId> = HashMap::default();
+        let mut buf = vec![];
+        let mut data = bufreader_from_compressed_gfa(gfa_file);
+        let mut count_nodes = 0;
+        while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
+            if buf[0] == b'S' || buf[0] == b'Q' {
+                count_nodes += 1;
+            }
+            buf.clear();
+        }
+        log::info!("Found {} nodes", count_nodes);
+
+        let mut node2id: HashMap<Vec<u8>, ItemId> =
+            HashMap::with_capacity_and_hasher(2 * count_nodes, Default::default());
+        let mut node2rule_id: Vec<usize> = vec![usize::MAX];
         let mut path_segments: Vec<PathSegment> = Vec::new();
         let mut node_lens: Vec<u32> = Vec::new();
         let mut extremities: Vec<(u64, u64)> = Vec::new();
@@ -322,6 +333,7 @@ impl GraphStorage {
         log::info!("constructing indexes for node/edge IDs, node lengths, and P/W lines..");
         node_lens.push(u32::MIN); // add empty element to node_lens to make it in sync with node_id
         let mut node_id = 1; // important: id must be > 0, otherwise counting procedure will produce errors
+        let mut meta_node_id = 0;
 
         let mut buf = vec![];
         let mut data = bufreader_from_compressed_gfa(gfa_file);
@@ -329,10 +341,8 @@ impl GraphStorage {
             if buf[0] == b'S' {
                 let mut iter = buf[2..].iter();
                 let offset = iter.position(|&x| x == b'\t').unwrap();
-                if node2id
-                    .insert(buf[2..offset + 2].to_vec(), ItemId(node_id))
-                    .is_some()
-                {
+                let text = buf[2..offset + 2].to_vec();
+                if node2id.insert(text, ItemId(node_id)).is_some() {
                     panic!(
                         "Segment with ID {} occurs multiple times in GFA",
                         str::from_utf8(&buf[2..offset + 2]).unwrap()
@@ -348,7 +358,22 @@ impl GraphStorage {
                     extremities.push((left, right));
                 }
                 node_lens.push(offset as u32);
+                node2rule_id.push(usize::MAX);
                 node_id += 1;
+            } else if buf[0] == b'Q' {
+                let mut iter = buf[2..].iter();
+                let offset = iter.position(|&x| x == b'\t').unwrap();
+                let text = buf[2..offset + 2].to_vec();
+                if node2id.insert(text, ItemId(node_id)).is_some() {
+                    panic!(
+                        "Meta-Segment with ID {} occurs multiple times in GFA",
+                        str::from_utf8(&buf[2..offset + 2]).unwrap()
+                    )
+                }
+                node2rule_id.push(meta_node_id);
+                node_lens.push(0);
+                node_id += 1;
+                meta_node_id += 1;
             } else if buf[0] == b'P' {
                 path_segments.push(Self::parse_path_segment(&buf));
             } else if buf[0] == b'W' {
@@ -358,9 +383,10 @@ impl GraphStorage {
         }
 
         log::info!(
-            "found: {} paths/walks, {} nodes",
+            "found: {} paths/walks, {} nodes, ({} are meta_nodes)",
             path_segments.len(),
-            node2id.len()
+            node2id.len(),
+            meta_node_id,
         );
         if path_segments.is_empty() {
             log::warn!("graph does not contain any annotated paths (P/W lines)");
@@ -368,9 +394,11 @@ impl GraphStorage {
 
         (
             node2id,
+            node2rule_id,
             path_segments,
             node_lens,
             if k.is_none() { None } else { Some(extremities) },
+            meta_node_id > 0,
         )
     }
 
@@ -411,59 +439,6 @@ impl GraphStorage {
             seq_end,
         )
     }
-
-    // pub fn get_k_plus_one_mer_edge(
-    //     &self,
-    //     u: usize,
-    //     o1: Orientation,
-    //     v: usize,
-    //     o2: Orientation,
-    //     k: usize,
-    // ) -> u64 {
-    //     let extremities = self.extremities.as_ref().unwrap();
-
-    //     let left = if o1 == Orientation::Forward {
-    //         extremities[u].1
-    //     } else {
-    //         revcmp(extremities[u].0, k)
-    //     };
-    //     let right = if o2 == Orientation::Forward {
-    //         extremities[v].0 & 0b11
-    //     } else {
-    //         revcmp(extremities[v].1, k) & 0b11
-    //     };
-
-    //     (left << 2) | right
-    // }
-
-    // pub fn get_k_plus_one_mer_right_telomer(&self, u: usize, o1: Orientation, k: usize) -> u64 {
-    //     let extremities = self.extremities.as_ref().unwrap();
-
-    //     let left = if o1 == Orientation::Forward  {
-    //         extremities[u].1
-    //     } else {
-    //         revcmp(extremities[u].0, k)
-    //     };
-
-    //     (left << 2) | right
-    // }
-
-    //#[allow(dead_code)]
-    //pub fn degree_distribution(&self) -> Option<Vec<u32>> {
-    //    match &self.degree {
-    //        Some(degree) => {
-    //            let mut hist: Vec<u32> = vec![0,1];
-    //            for i in 1..self.node_count+1 {
-    //                if degree[i] as usize >= hist.len() {
-    //                    hist.resize(degree[i] as usize +1, 0);
-    //                }
-    //                hist[degree[i] as usize] += 1;
-    //            }
-    //            Some(hist)
-    //        }
-    //        None => None
-    //    }
-    //}
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Hash, Eq, Ord)]
@@ -490,6 +465,26 @@ impl PathSegment {
             start,
             end,
         }
+    }
+
+    // Test if path is a more specified version of other (e.g., grch38#0#chrY is a more specified version of grch38#0)
+    pub fn is_part_of(&self, other: &PathSegment) -> bool {
+        if self.sample != other.sample {
+            return false;
+        }
+        if other.haplotype.is_some() && self.haplotype != other.haplotype {
+            return false;
+        }
+        if other.seqid.is_some() && self.seqid != other.seqid {
+            return false;
+        }
+        if other.start.is_some()
+            && other.end.is_some()
+            && (self.start != other.start || self.end != other.end)
+        {
+            return false;
+        }
+        true
     }
 
     pub fn from_str(s: &str) -> Self {
@@ -595,24 +590,6 @@ impl PathSegment {
             None
         }
     }
-
-    //#[allow(dead_code)]
-    //pub fn covers(&self, other: &PathSegment) -> bool {
-    //    self.sample == other.sample
-    //        && (self.haplotype == other.haplotype
-    //            || (self.haplotype.is_none()
-    //                && self.seqid.is_none()
-    //                && self.start.is_none()
-    //                && self.end.is_none()))
-    //        && (self.seqid == other.seqid
-    //            || (self.seqid.is_none() && self.start.is_none() && self.end.is_none()))
-    //        && (self.start == other.start
-    //            || self.start.is_none()
-    //            || (other.start.is_some() && self.start.unwrap() <= other.start.unwrap()))
-    //        && (self.end == other.end
-    //            || self.end.is_none()
-    //            || (other.end.is_some() && self.end.unwrap() >= other.end.unwrap()))
-    //}
 }
 
 impl fmt::Display for PathSegment {

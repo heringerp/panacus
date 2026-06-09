@@ -1,61 +1,76 @@
-use std::collections::HashSet;
+use std::fs::File;
+use std::io::{self, BufRead};
+use std::path::Path;
 
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
-
-use crate::analysis_parameter::AnalysisParameter;
-use crate::graph_broker::{GraphBroker, ThresholdContainer};
+use crate::analyses::MatrixBasedAnalysis;
+use crate::coverage_matrix::CoverageMatrix;
+use crate::file_formats::gfa_parser::ThresholdContainer;
 use crate::html_report::ReportItem;
-use crate::util::{get_default_plot_downloads, CountType};
-use crate::{analyses::InputRequirement, io::write_ordered_histgrowth_table};
+use crate::io::{write_metadata_comments, write_ordered_table};
+use crate::util::get_default_plot_downloads;
+use crate::util::Threshold;
+use rayon::prelude::*;
 
-use super::{Analysis, AnalysisSection, ConstructibleAnalysis};
+use super::AnalysisSection;
 
 type Growths = Vec<Vec<f64>>;
 
 pub struct OrderedHistgrowth {
-    parameter: AnalysisParameter,
+    coverage: Option<String>,
+    quorum: Option<String>,
+    path_order: Option<Vec<String>>,
+    order: Option<String>,
     inner: Option<InnerOrderedGrowth>,
 }
 
-impl ConstructibleAnalysis for OrderedHistgrowth {
-    fn from_parameter(parameter: AnalysisParameter) -> Self {
-        Self {
-            parameter,
-            inner: None,
-        }
-    }
-}
-
-impl Analysis for OrderedHistgrowth {
+impl MatrixBasedAnalysis for OrderedHistgrowth {
     fn get_type(&self) -> String {
         "OrderedHistgrowth".to_string()
     }
-    fn generate_table(
-        &mut self,
-        gb: Option<&crate::graph_broker::GraphBroker>,
-    ) -> anyhow::Result<String> {
-        if let Some(gb) = gb {
-            write_ordered_histgrowth_table(
-                gb.get_abacus_by_group(),
-                &self.inner.as_ref().unwrap().hist_aux,
-                gb.get_node_lens(),
-            )
-        } else {
-            Ok("".to_string())
+
+    fn generate_table(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<String> {
+        self.set_inner(matrix)?;
+
+        let mut res = write_metadata_comments()?;
+
+        let inner = self.inner.as_ref().unwrap();
+        // insert empty row for 0 element
+        let m = inner.hist_aux.coverage.len();
+        let mut header_cols = vec![vec![
+            "panacus".to_string(),
+            "count".to_string(),
+            "coverage".to_string(),
+            "quorum".to_string(),
+        ]];
+        header_cols.extend(
+            std::iter::repeat("ordered-growth")
+                .take(m)
+                .zip(std::iter::repeat(matrix.get_feature_type()).take(m))
+                .zip(inner.hist_aux.coverage.iter())
+                .zip(&inner.hist_aux.quorum)
+                .map(|(((p, t), c), q)| {
+                    vec![p.to_string(), t.to_string(), c.get_string(), q.get_string()]
+                })
+                .collect::<Vec<Vec<String>>>(),
+        );
+        let mut order = self.path_order.as_ref().unwrap().clone();
+
+        // Insert zero element
+        order.insert(0, "No_Path".to_string());
+        let mut growths = inner.growths.clone();
+        for growth in growths.iter_mut() {
+            growth.insert(0, 0.0);
         }
+        let table = write_ordered_table(&header_cols, &growths, &order)?;
+        res.push_str(&table);
+        Ok(res)
     }
 
     fn generate_report_section(
         &mut self,
-        dm: Option<&GraphBroker>,
+        matrix: &CoverageMatrix,
     ) -> anyhow::Result<Vec<AnalysisSection>> {
-        self.set_inner(dm)?;
-        let count = match self.parameter {
-            AnalysisParameter::OrderedGrowth { count_type, .. } => count_type,
-            _ => {
-                panic!("Parameter has to fit the analysis")
-            }
-        };
+        self.set_inner(matrix)?;
         let hist_aux = &self.inner.as_ref().unwrap().hist_aux;
         let growth_labels = (0..hist_aux.coverage.len())
             .map(|i| {
@@ -66,22 +81,24 @@ impl Analysis for OrderedHistgrowth {
                 )
             })
             .collect::<Vec<_>>();
-        let table = self.generate_table(dm)?;
+        let table = self.generate_table(matrix)?;
         let table = format!("`{}`", &table);
         let growths = &self.inner.as_ref().unwrap().growths;
         let id_prefix = format!(
             "pan-ordered-growth-{}",
-            self.get_run_id(dm.expect("Ordered Growth should be called with a graph"))
+            matrix
+                .get_run_id()
                 .to_lowercase()
                 .replace(&[' ', '|', '\\'], "-")
         );
-        let labels = dm.unwrap().get_abacus_by_group().groups.clone();
+        let labels = matrix.get_path_names().clone();
+        let count = matrix.get_feature_type();
         let growth_tabs = vec![AnalysisSection {
             id: format!("{id_prefix}"),
             analysis: "Ordered Growth".to_string(),
-            run_name: self.get_run_name(dm.expect("Ordered Growth should be called with a graph")),
-            run_id: self.get_run_id(dm.expect("Ordered Growth should be called with a graph")),
-            countable: count.to_string(),
+            run_name: matrix.get_run_name().to_owned(),
+            run_id: matrix.get_run_id().to_owned(),
+            countable: matrix.get_feature_type().to_string(),
             table: Some(table.clone()),
             items: vec![ReportItem::MultiBar {
                 id: format!("{id_prefix}"),
@@ -92,109 +109,110 @@ impl Analysis for OrderedHistgrowth {
                 labels,
                 values: growths.clone(),
                 log_toggle: false,
+                alpha: None,
+                curve: None,
             }],
             plot_downloads: get_default_plot_downloads(),
         }];
         Ok(growth_tabs)
-        //let mut growths: Vec<Vec<f64>> = self
-        //    .hist_aux
-        //    .coverage
-        //    .par_iter()
-        //    .zip(&self.hist_aux.quorum)
-        //    .map(|(c, q)| {
-        //        log::info!(
-        //            "calculating ordered growth for coverage >= {} and quorum >= {}",
-        //            &c,
-        //            &q
-        //        );
-        //        gb.get_abacus_by_group()
-        //            .calc_growth(c, q, gb.get_node_lens())
-        //    })
-        //    .collect();
-        //// insert empty row for 0 element
-        //for c in &mut growths {
-        //    c.insert(0, f64::NAN);
-        //}
-        //let table = self.generate_table(Some(gb)).expect("Can write to string");
-        //let k = gb.get_abacus_by_group().count;
-        //Ok(vec![
-        //])
-    }
-
-    fn get_graph_requirements(&self) -> HashSet<InputRequirement> {
-        if let AnalysisParameter::OrderedGrowth { count_type, .. } = &self.parameter {
-            let mut req = HashSet::from([InputRequirement::AbacusByGroup(*count_type)]);
-            req.extend(Self::count_to_input_req(*count_type));
-            req
-        } else {
-            HashSet::new()
-        }
     }
 }
 
 impl OrderedHistgrowth {
-    fn count_to_input_req(count: CountType) -> HashSet<InputRequirement> {
-        match count {
-            CountType::Bp => HashSet::from([InputRequirement::Bp]),
-            CountType::Node => HashSet::from([InputRequirement::Node]),
-            CountType::Edge => HashSet::from([InputRequirement::Edge]),
-            CountType::All => HashSet::from([
-                InputRequirement::Bp,
-                InputRequirement::Node,
-                InputRequirement::Edge,
-            ]),
+    pub fn new(coverage: Option<String>, quorum: Option<String>, order: Option<String>) -> Self {
+        Self {
+            coverage,
+            quorum,
+            order,
+            path_order: None,
+            inner: None,
         }
     }
-
-    fn get_run_name(&self, gb: &GraphBroker) -> String {
-        format!("{}", gb.get_run_name())
-    }
-
-    fn get_run_id(&self, gb: &GraphBroker) -> String {
-        format!("{}-orderedgrowth", gb.get_run_id())
-    }
-
-    fn set_inner(&mut self, gb: Option<&GraphBroker>) -> anyhow::Result<()> {
+    fn set_inner(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<()> {
         if self.inner.is_some() {
             return Ok(());
         }
 
-        if let AnalysisParameter::OrderedGrowth {
-            coverage, quorum, ..
-        } = &self.parameter
-        {
-            let quorum = quorum.to_owned().unwrap_or("0".to_string());
-            let coverage = coverage.to_owned().unwrap_or("1".to_string());
-            let hist_aux = ThresholdContainer::parse_params(&quorum, &coverage)?;
+        let quorum = self.quorum.clone().unwrap_or("0".to_string());
+        let coverage = self.coverage.clone().unwrap_or("1".to_string());
+        let hist_aux = ThresholdContainer::parse_params(&quorum, &coverage)?;
+        let order = match &self.order {
+            Some(filename) => parse_list(&filename[..])?,
+            None => matrix.get_path_names().clone(),
+        };
 
-            if gb.is_none() {
-                panic!("OrderedHistgrowth needs a graph in order to work");
-            }
-
-            let growths: Vec<Vec<f64>> = hist_aux
-                .coverage
-                .par_iter()
-                .zip(&hist_aux.quorum)
-                .map(|(c, q)| {
-                    log::info!(
-                        "calculating ordered growth for coverage >= {} and quorum >= {}",
-                        &c,
-                        &q
-                    );
-                    gb.unwrap()
-                        .get_abacus_by_group()
-                        .calc_growth(c, q, gb.unwrap().get_node_lens())
-                })
-                .collect();
-            self.inner = Some(InnerOrderedGrowth { growths, hist_aux });
-            Ok(())
-        } else {
-            panic!("OrderedGrowth should always contain ordered-growth parameter")
-        }
+        let growths: Vec<Vec<f64>> = hist_aux
+            .coverage
+            .par_iter()
+            .zip(&hist_aux.quorum)
+            .map(|(c, q)| {
+                log::info!(
+                    "calculating ordered growth for coverage >= {} and quorum >= {}",
+                    &c,
+                    &q
+                );
+                calc_growth(matrix, c, q, &order)
+            })
+            .collect();
+        self.path_order = Some(order);
+        self.inner = Some(InnerOrderedGrowth { growths, hist_aux });
+        Ok(())
     }
 }
 
 struct InnerOrderedGrowth {
     growths: Growths,
     hist_aux: ThresholdContainer,
+}
+
+pub fn parse_list(filename: &str) -> anyhow::Result<Vec<String>> {
+    let lines = read_lines(filename)?.map_while(Result::ok).collect();
+    Ok(lines)
+}
+
+pub fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
+}
+
+pub fn calc_growth(
+    matrix: &CoverageMatrix,
+    t_coverage: &Threshold,
+    t_quorum: &Threshold,
+    order: &Vec<String>,
+) -> Vec<f64> {
+    let n_paths = matrix.get_path_names().len();
+    let mut res = vec![0.0; n_paths];
+
+    let c = usize::max(1, t_coverage.to_absolute(n_paths));
+    let q = f64::max(0.0, t_quorum.to_relative(n_paths));
+    let feature_lengths = matrix.get_feature_lengths();
+
+    for i in 0..matrix.get_feature_count() {
+        // If this feature appears less often than the coverage
+        // skip it.
+        if matrix.get_count_of_feature(i) < c {
+            continue;
+        }
+
+        let entry_indices: Vec<usize> = matrix.get_appearances_for_order(i, order);
+        let mut entry_indices_index = 0;
+        for path_idx in entry_indices[0]..n_paths {
+            if entry_indices_index < entry_indices.len() - 1
+                && path_idx >= entry_indices[entry_indices_index + 1]
+            {
+                entry_indices_index += 1;
+            }
+            let num_seen_paths = path_idx + 1;
+            let num_appearances = entry_indices_index + 1;
+            let ratio = num_appearances as f64 / num_seen_paths as f64;
+            if ratio >= q {
+                res[path_idx] += feature_lengths[i] as f64;
+            }
+        }
+    }
+    res
 }

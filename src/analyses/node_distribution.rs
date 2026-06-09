@@ -1,34 +1,29 @@
-use std::collections::HashSet;
-
 use itertools::multizip;
 use itertools::Itertools;
 
+use crate::analyses::MatrixBasedAnalysis;
+use crate::coverage_matrix::CoverageMatrix;
 use crate::{
-    graph_broker::{GraphBroker, ItemId},
     html_report::{AnalysisSection, Bin, ReportItem},
     util::get_default_plot_downloads,
     util::CountType,
 };
 
-use super::{Analysis, ConstructibleAnalysis, InputRequirement};
-
 pub struct NodeDistribution {
     bins: Vec<Bin>,
     min: (u32, f64),
     max: (u32, f64),
+    threshold: usize,
 }
 
-impl Analysis for NodeDistribution {
+impl MatrixBasedAnalysis for NodeDistribution {
     fn get_type(&self) -> String {
         "NodeDistribution".to_string()
     }
 
-    fn generate_table(
-        &mut self,
-        gb: Option<&crate::graph_broker::GraphBroker>,
-    ) -> anyhow::Result<String> {
+    fn generate_table(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<String> {
         if self.bins.is_empty() {
-            self.set_table(gb);
+            self.set_table(matrix);
         }
         let mut result = "Bin\tCoverage\tLog-Length\tLog-Size\n".to_string();
         for (i, bin) in self.bins.iter().enumerate() {
@@ -37,20 +32,17 @@ impl Analysis for NodeDistribution {
         Ok(result)
     }
 
-    fn get_graph_requirements(&self) -> std::collections::HashSet<super::InputRequirement> {
-        HashSet::from([InputRequirement::Node])
-    }
-
     fn generate_report_section(
         &mut self,
-        gb: Option<&crate::graph_broker::GraphBroker>,
+        matrix: &CoverageMatrix,
     ) -> anyhow::Result<Vec<crate::html_report::AnalysisSection>> {
-        let table = self.generate_table(gb)?;
+        let table = self.generate_table(matrix)?;
         //let table = "".to_string();
         let table = format!("`{}`", &table);
         let id_prefix = format!(
             "node-dist-{}",
-            self.get_run_id(gb.expect("Node Distribution should be called with a graph"))
+            matrix
+                .get_run_id()
                 .to_lowercase()
                 .replace(&[' ', '|', '\\'], "-")
         );
@@ -58,13 +50,13 @@ impl Analysis for NodeDistribution {
             id: format!("{}-{}", id_prefix, CountType::Node.to_string()),
             analysis: "Node distribution".to_string(),
             table: Some(table),
-            run_name: self
-                .get_run_name(gb.expect("Node Distribution should be called with a graph")),
-            run_id: self.get_run_id(gb.expect("Node Distribution should be called with a graph")),
+            run_name: matrix.get_run_name().to_owned(),
+            run_id: matrix.get_run_id().to_owned(),
             countable: CountType::Node.to_string(),
             items: vec![ReportItem::Hexbin {
-                id: format!("{id_prefix}-{}", CountType::Node),
+                id: format!("{id_prefix}-{}", matrix.get_feature_type()),
                 bins: self.bins.clone(),
+                threshold: self.threshold,
             }],
             plot_downloads: get_default_plot_downloads(),
         }];
@@ -72,50 +64,45 @@ impl Analysis for NodeDistribution {
     }
 }
 
-impl ConstructibleAnalysis for NodeDistribution {
-    fn from_parameter(_parameter: crate::analysis_parameter::AnalysisParameter) -> Self {
+impl NodeDistribution {
+    fn set_table(&mut self, matrix: &CoverageMatrix) {
+        let countables = &matrix.get_feature_counts();
+        let (cov_min, cov_max) = match countables.iter().minmax() {
+            itertools::MinMaxResult::MinMax(min, max) => (min, max),
+            _ => panic!("Node distribution needs to have at least two countables"),
+        };
+        // TODO What about this log? Can be very dangerous, since there are variants of length 0
+        let node_lens = &matrix
+            .get_feature_lengths()
+            .iter()
+            .map(|x| if *x > 0 { (*x as f64).log10() } else { -1.0 })
+            .collect::<Vec<f64>>();
+        let (lens_min, lens_max) = match node_lens.iter().minmax() {
+            itertools::MinMaxResult::MinMax(min, max) => (min, max),
+            _ => panic!("Node distribution needs to have at least two countables"),
+        };
+        let node_names = matrix.get_feature_names();
+        let points: Vec<(String, u32, f64)> = multizip((
+            (0..node_lens.len())
+                .into_iter()
+                .map(|id| (&node_names[id]).to_string())
+                .collect::<Vec<String>>(),
+            countables.into_iter().copied().map(|x| x as u32),
+            node_lens.into_iter().copied(),
+        ))
+        .collect();
+        let bins = Bin::hexbin(&points, 15, 9);
+        self.bins = bins;
+        self.min = (*cov_min as u32, *lens_min);
+        self.max = (*cov_max as u32, *lens_max);
+    }
+
+    pub fn new(_radius: u32, threshold: usize) -> Self {
         Self {
             bins: Vec::new(),
-            min: (0, 0.0),
-            max: (0, 0.0),
+            min: (u32::MIN, f64::MIN),
+            max: (u32::MAX, f64::MAX),
+            threshold,
         }
-    }
-}
-
-impl NodeDistribution {
-    fn set_table(&mut self, gb: Option<&GraphBroker>) {
-        if let Some(gb) = gb {
-            let countables = &gb.get_abacus_by_total(CountType::Node).countable[1..];
-            let (cov_min, cov_max) = match countables.iter().minmax() {
-                itertools::MinMaxResult::MinMax(min, max) => (min, max),
-                _ => panic!("Node distribution needs to have at least two countables"),
-            };
-            let node_ids = gb.get_nodes().to_owned();
-            let node_lens = &gb.get_node_lens()[1..]
-                .iter()
-                .map(|x| (*x as f64).log10())
-                .collect::<Vec<f64>>();
-            let (lens_min, lens_max) = match node_lens.iter().minmax() {
-                itertools::MinMaxResult::MinMax(min, max) => (min, max),
-                _ => panic!("Node distribution needs to have at least two countables"),
-            };
-            let points: Vec<(ItemId, u32, f64)> = multizip((
-                node_ids,
-                countables.into_iter().copied(),
-                node_lens.into_iter().copied(),
-            ))
-            .collect();
-            let bins = Bin::hexbin(&points, 15, 9);
-            self.bins = bins;
-            self.min = (*cov_min, *lens_min);
-            self.max = (*cov_max, *lens_max);
-        }
-    }
-
-    fn get_run_name(&self, gb: &GraphBroker) -> String {
-        format!("{}", gb.get_run_name())
-    }
-    fn get_run_id(&self, gb: &GraphBroker) -> String {
-        format!("{}-nodedistribution", gb.get_run_id())
     }
 }

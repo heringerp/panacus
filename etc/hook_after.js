@@ -73,6 +73,28 @@ for (let key in objects.datasets) {
         } else {
             data.values = h.data.values;
         }
+        if (h.data.values.length >= 200 && h.ordinal) {
+            mark_type = "area";
+            x_encoding = {
+                "field": "label",
+                "title": h.x_label,
+                "type": "quantitative",
+                "scale": {
+                    "nice": false
+                }
+            };
+        } else {
+            mark_type = "bar";
+            x_encoding = {
+                "field": "label",
+                "title": h.x_label,
+                "sort": null,
+                "type": h.ordinal ? 'ordinal' : 'nominal',
+                "axis": {
+                    "labelOverlap": "greedy"
+                }
+            }
+        }
         if (h.log_toggle) {
             data.values = data.values.filter((el) => el.value > 0);
         }
@@ -89,27 +111,10 @@ for (let key in objects.datasets) {
             data,
             layer: [
                 {
-                    "params": [
-                        {
-                            "name": "hover",
-                            "select": {"type": "point", "on": "pointerover", "clear": "pointerout"}
-                        }
-                    ],
-                    "mark": {"type": "bar", "color": "#eee", "tooltip": true},
+                    "mark": {"type": mark_type, "tooltip": true},
                     "encoding": {
-                        x: {field: 'label', type: 'nominal', "axis": {"labelAngle": 65}, title: h.x_label},
-                        "opacity": {
-                            "condition": {"test": {"param": "hover", "empty": false}, "value": 0.5},
-                            "value": 0
-                        },
-                        "detail": [{field: 'value', type: 'quantitative', title: h.y_label}]
-                    }
-                },
-                {
-                    mark: 'bar',
-                    encoding: {
-                        x: {field: 'label', type: h.ordinal ? 'ordinal' : 'nominal', "axis": {"labelAngle": 65}, title: h.x_label},
-                        y: {field: 'value', title: h.y_label},
+                        "x": x_encoding,
+                        "y": {"field": 'value', "title": h.y_label},
                     },
                 },
             ]
@@ -118,12 +123,12 @@ for (let key in objects.datasets) {
         function render(scaleType, thisId, vlSpec, add_listeners) {
             const copied_spec = JSON.parse(JSON.stringify(vlSpec)); // deep copy
             if (scaleType == "log") {
-                copied_spec.layer[1].encoding.y.scale = { type: "log", domainMin: 1 }; // set scale type
-                copied_spec.layer[1].encoding.y2 = { datum: 1 }; // set scale type
+                copied_spec.layer[0].encoding.y.scale = { type: "log", domainMin: 1 }; // set scale type
+                copied_spec.layer[0].encoding.y2 = { datum: 1 }; // set scale type
             } else {
-                copied_spec.layer[1].encoding.y.scale = { type: "linear" }; // set scale type
-                if ('y2' in copied_spec.layer[1].encoding) {
-                    delete copied_spec.layer[1].encoding[y2]; // set scale type
+                copied_spec.layer[0].encoding.y.scale = { type: "linear" }; // set scale type
+                if ('y2' in copied_spec.layer[0].encoding) {
+                    delete copied_spec.layer[0].encoding[y2]; // set scale type
                 }
             }
             let opt = {
@@ -187,17 +192,41 @@ for (let key in objects.datasets) {
         let m = element;
         var ctx = document.getElementById('chart-bar-' + m.id);
         let id = 'chart-bar-' + m.id;
-        let yourVlSpec = {
-            $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
-            description: 'MultiBar',
-            width: 1000,
-            "autosize": {
-                "type": "fit",
-                "contains": "padding"
-            },
-            height: 350,
-            data: m.data,
-            layer: [
+        let mark_type, x_encoding;
+        if (m.data.values.length >= 300 && m.ordinal) {
+            mark_type = "area";
+            x_encoding = {
+                "field": "label",
+                "title": m.x_label,
+                "type": "quantitative",
+                "scale": {
+                    "nice": false
+                }
+            };
+        } else if (m.data.values.length >= 300) {
+            mark_type = "area";
+            x_encoding = {
+                "field": "label",
+                "title": m.x_label,
+                "type": 'nominal',
+                "sort": null,
+                "axis": {
+                    "labelOverlap": "greedy"
+                }
+            }
+        } else {
+            mark_type = "bar";
+            x_encoding = {
+                "field": "label",
+                "title": m.x_label,
+                "type": m.ordinal ? 'ordinal' : 'nominal',
+                "sort": null,
+                "axis": {
+                    "labelOverlap": "greedy"
+                }
+            }
+        }
+        let layer_values = [
                 {
                     "params": [
                         {
@@ -210,11 +239,11 @@ for (let key in objects.datasets) {
                           }
                         }
                     ],
-                    mark: {"type": 'bar', "tooltip": {"content": "data"}},
-                    encoding: {
-                        x: {field: 'label', type: 'ordinal', title: m.x_label, sort: null},
+                    "mark": {"type": mark_type, "tooltip": {"content": "data"}},
+                    "encoding": {
+                        "x": x_encoding,
                         "y": {
-                            "aggregate": "sum", "field": "value",
+                            "field": "value",
                             "title": m.y_label,
                             "stack": null
                         },
@@ -231,8 +260,39 @@ for (let key in objects.datasets) {
                         }
                     },
                 },
-            ]
+            ];
+        if ('values' in m.heaps_curve) {
+            layer_values.push({
+                "data": m.heaps_curve,
+                "mark": {
+                    "type": "line",
+                    "color": "red"
+                },
+                "encoding": {
+                    "x": x_encoding,
+                    "y": {"field": "value", "scale": { "type": "linear" } }
+                }
+            });
+        }
+        let yourVlSpec = {
+            $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
+            "description": 'MultiBar',
+            "width": 1000,
+            "autosize": {
+                "type": "fit",
+                "contains": "padding"
+            },
+            "height": 350,
+            "data": m.data,
+            "layer": layer_values,
+            "resolve": {
+                "x": "shared",
+                "y": "shared"
+            }
         };
+        if (!isNaN(m.alpha)) {
+            yourVlSpec["title"] = "Growth plot with α=" + m.alpha.toFixed(3);
+        }
 
         function render(scaleType, thisId, vlSpec, add_listeners) {
             const copied_spec = JSON.parse(JSON.stringify(vlSpec)); // deep copy
@@ -243,6 +303,175 @@ for (let key in objects.datasets) {
                 copied_spec.layer[0].encoding.y.scale = { type: "linear" }; // set scale type
                 if ('y2' in copied_spec.layer[0].encoding) {
                     delete copied_spec.layer[0].encoding[y2]; // set scale type
+                }
+            }
+            let opt = {
+                "actions": false,
+            };
+            vegaEmbed(`#${CSS.escape(thisId)}`, copied_spec, opt).then(({ view, spec, vgSpec }) => {
+                if (add_listeners) {
+                    // Export PNG
+                    let png_button = document.getElementById('btn-download-plot-png-' + m.id);
+                    png_button.addEventListener('click', () => {
+                        view.toImageURL('png').then(url => {
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = 'visualization.png';
+                            a.click();
+                        });
+                    });
+
+                    // Export SVG
+                    let svg_button = document.getElementById('btn-download-plot-svg-' + m.id);
+                    svg_button.removeEventListener('click', svg_button);
+                    svg_button.addEventListener('click', function svg_button() {
+                        view.toImageURL('svg').then(url => {
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = 'visualization.svg';
+                            a.click();
+                        });
+                    });
+
+                    // Open in Vega Editor
+                    let vega_editor_button = document.getElementById('btn-download-plot-vega-editor-' + m.id);
+                    vega_editor_button.addEventListener('click', () => {
+                        post_to_vega_editor(window, {
+                            mode: 'vega-lite',
+                            spec: JSON.stringify(spec, null, 2),
+                            renderer: undefined,
+                            config: undefined,
+                        });
+                    });
+                }
+            });
+        }
+
+        render("linear", id, yourVlSpec, true);
+    } else if (element instanceof SectionLine) {
+        let m = element;
+        var ctx = document.getElementById('chart-bar-' + m.id);
+        let id = 'chart-bar-' + m.id;
+        let mark_type, x_encoding;
+        if (m.ordinal) {
+            mark_type = "line";
+            x_encoding = {
+                "field": "label",
+                "title": m.x_label,
+                "type": "quantitative",
+                "scale": {
+                    "nice": false
+                }
+            };
+        } else {
+            mark_type = "line";
+            x_encoding = {
+                "field": "label",
+                "title": m.x_label,
+                "type": 'nominal',
+                "sort": null,
+                "axis": {
+                    "labelOverlap": "greedy"
+                }
+            }
+        }
+        const values = m.separators.values;
+        const texts = m.section_labels.values;
+        const finalEnd = Number(m.data.values.at(-1).label);
+        const separator_values = texts.map((text, index) => {
+              const start = index === 0 ? 0 : values[index - 1];
+              const end = index === texts.length - 1 ? finalEnd : values[index];
+              return {
+                start: start,
+                end: end,
+                "Section": text
+              };
+            });
+        let layer_values = [
+
+{
+      "mark": "rect",
+      "data": {
+        "values": separator_values
+              },
+      "encoding": {
+        "x": {
+          "field": "start",
+          "title": "taxa",
+          "type": "quantitative",
+          "scale": {
+            "nice": false
+          }
+        },
+        "x2": {
+          "field": "end",
+          "title": "taxa",
+          "type": "quantitative"
+        },
+        "color": {"field": "Section", "type": "nominal", "scale": {"scheme": "pastel1"}}
+      },
+      },
+                      {
+                    "params": [
+                        {
+                          "name": "toggle-curves",
+                          "bind": "legend",
+                          "select": {
+                            "type": "point",
+                            "toggle": "true",
+                            "fields": ["name"]
+                          }
+                        }
+                    ],
+                    "mark": {"type": mark_type, "tooltip": {"content": "data"}},
+                    "encoding": {
+                        "x": x_encoding,
+                        "y": {
+                            "field": "value",
+                            "title": m.y_label,
+                            "stack": null
+                        },
+                        "color": {
+                            "field": "name",
+                            "type": "nominal",
+                            "scale": {
+                                "range": ['#f77189', '#bb9832', '#50b131', '#36ada4', '#3ba3ec', '#e866f4']
+                            }
+                        },
+                        "opacity": {
+                            "condition": {"param": "toggle-curves", "value": 1},
+                            "value": 0.2
+                        }
+                    },
+                },
+            ];
+        let yourVlSpec = {
+            $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
+            "description": 'MultiBar',
+            "width": 1000,
+            "autosize": {
+                "type": "fit",
+                "contains": "padding"
+            },
+            "height": 350,
+            "data": m.data,
+            "layer": layer_values,
+            "resolve": {
+                "scale": {
+                    "color": "independent"
+                }
+            }
+        };
+
+        function render(scaleType, thisId, vlSpec, add_listeners) {
+            const copied_spec = JSON.parse(JSON.stringify(vlSpec)); // deep copy
+            if (scaleType == "log") {
+                copied_spec.layer[1].encoding.y.scale = { type: "log", domainMin: 1 }; // set scale type
+                copied_spec.layer[1].encoding.y2 = { datum: 1 }; // set scale type
+            } else {
+                copied_spec.layer[1].encoding.y.scale = { type: "linear" }; // set scale type
+                if ('y2' in copied_spec.layer[1].encoding) {
+                    delete copied_spec.layer[1].encoding[y2]; // set scale type
                 }
             }
             let opt = {
@@ -369,6 +598,150 @@ for (let key in objects.datasets) {
                 });
             });
         });
+    } else if (element instanceof Chromosomal) {
+        let c = element;
+        let thisId = 'chart-chromosomal-' + c.id;
+        // buildPlotDownload(myChart, h.id, fname);
+        let mySpec = {
+            "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+            "description": "Chromosomal plot",
+            "data": c.data,
+            "width": 1100,
+            "params": [
+                {
+                    "name": "grid",
+                    "select": "interval",
+                    "bind": "scales"
+                },
+                {
+                  "name": "metric_select",
+                  "value": c.labels[0],
+                  "bind": {
+                    "input": "select",
+                    "options": c.labels,
+                    "name": "Variable: "
+                  }
+                },
+                {
+                  "name": "color_range",
+                  "expr": "metric_select == 'Growth' ? 'redyellowblue' : 'yelloworangered'"
+                },
+                {
+                    "name": "domain_mid",
+                    "expr": "metric_select == 'Growth' ? 1 : null"
+                }
+            ],
+            "transform": [
+                {
+                  "fold": c.labels,
+                  "as": ["metric_type", "metric_value"]
+                },
+                {
+                  "filter": "datum.metric_type == metric_select"
+                }
+            ],
+            "mark": {
+                "type": "rect",
+                "clip": true,
+                "tooltip": true
+            },
+            "title": {
+                "text": c.sequence,
+                "anchor": "start"
+            },
+            "encoding": {
+                "x": {
+                    "field": "x",
+                    "type": "quantitative",
+                    "scale": {"nice": false, "zero": false},
+                    "axis": {"domain": false, "grid": false, "ticks": true, "labels": true},
+                    "title": "Position in bps"
+                },
+                "x2": {
+                    "field": "x2",
+                },
+                "color": {
+                    "field": "metric_value",
+                    "type": "quantitative",
+                    "scale": {
+                      "scheme": {"expr": "color_range"} ,
+                      "type": "linear",
+                      "domainMid": {"expr": "domain_mid"}
+                    }
+                }
+            },
+            "config": {
+                "axis": {"grid": true, "tickBand": "extent"},
+                "view": {"stroke": "black", "strokeWidth": 2, "cornerRadius": 20}
+            }
+          };
+
+        function render(scaleType, thisId, vlSpec, addListeners) {
+            const copied_spec = JSON.parse(JSON.stringify(vlSpec)); // deep copy
+            console.log("Setting scale type: " + scaleType);
+            if (scaleType == "log") {
+                copied_spec.encoding.color.scale.type = "symlog"; // set scale type
+            } else {
+                copied_spec.encoding.color.scale.type = "linear"; // set scale type
+            }
+            let opt = {
+                "actions": false,
+            };
+        vegaEmbed(`#${CSS.escape(thisId)}`, copied_spec, opt).then(({ view, spec, vgSpec }) => {
+
+            if (addListeners) {
+
+            // Export PNG
+            let png_button = document.getElementById('btn-download-plot-png-' + c.id);
+            png_button.addEventListener('click', () => {
+                view.toImageURL('png').then(url => {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'visualization.png';
+                    a.click();
+                });
+            });
+
+            // Export SVG
+            let svg_button = document.getElementById('btn-download-plot-svg-' + c.id);
+            svg_button.removeEventListener('click', svg_button);
+            svg_button.addEventListener('click', function svg_button() {
+                view.toImageURL('svg').then(url => {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'visualization.svg';
+                    a.click();
+                });
+            });
+
+            // Open in Vega Editor
+            let vega_editor_button = document.getElementById('btn-download-plot-vega-editor-' + c.id);
+            vega_editor_button.addEventListener('click', () => {
+                post_to_vega_editor(window, {
+                    mode: 'vega-lite',
+                    spec: JSON.stringify(spec, null, 2),
+                    renderer: undefined,
+                    config: undefined,
+                });
+            });
+            }
+        });
+        }
+
+        console.log('btn-logscale-plot-chrom-' + c.id);
+        document.getElementById('btn-logscale-plot-chrom-' + c.id).addEventListener('change', (event) => {
+            if (event.currentTarget.checked) {
+                render("log", thisId, mySpec, false);
+            } else {
+                render("linear", thisId, mySpec, false);
+            }
+        });
+
+        if (document.getElementById('btn-logscale-plot-chrom-' + c.id).checked) {
+            render("log", thisId, mySpec, true);
+        } else {
+            render("linear", thisId, mySpec, true);
+        }
     } else if (element instanceof Hexbin) {
         let h = element;
         let thisId = 'chart-hexbin-' + h.id;
@@ -433,7 +806,11 @@ for (let key in objects.datasets) {
                 let table = "";
                 ids.forEach((id) => {
                     h.bin_content[id - 1].forEach((dataPoint) => {
-                        table += dataPoint + "\t" + id + "\n";
+                        if (dataPoint != -1) {
+                            table += dataPoint + "\t" + id + "\n";
+                        } else {
+                            table += "ThisBinContainsMoreThan1000Entries\t" + id + "\n";
+                        }
                     });
                 });
                 let blob = new Blob([table], {type: 'text/plain'});
@@ -504,11 +881,17 @@ for (let key in objects.datasets) {
                     "field": "y",
                     "type": "ordinal",
                     "sort": null,
+                    "axis": {
+                        "labelOverlap": "greedy"
+                    }
                 },
                 "x": {
                     "field": "x",
                     "type": "ordinal",
                     "sort": null,
+                    "axis": {
+                        "labelOverlap": "greedy"
+                    }
                 },
                 "color": {
                     "field": "value",

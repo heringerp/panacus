@@ -1,6 +1,6 @@
 [package]
 name        = "panacus"
-version     = "0.4.2"
+version     = "0.5.0"
 edition     = "2018"
 rust-version= "1.60"
 
@@ -17,7 +17,6 @@ quick-csv   = "0.1.6"
 rand        = "0.8"
 rayon       = "1.7"
 regex       = "1"
-rustc-hash  = "1"
 strum       = "0.25"
 strum_macros= "0.25"
 time        = { version = "0.3", features = ["macros", "formatting"] }
@@ -32,20 +31,31 @@ serde_yaml = "0.9.21"
 serde = { version = "1.0", features = ["derive"] }
 memchr = "2.6.2"
 kodama = "0.3.0"
+ml_helpers = { git = "https://github.com/codialab/ml_helpers.git" }
 serde_json = "1.0.145"
 shadow-rs = { version = "1.4.0", features = ["metadata"] }
+tempfile = "3.13"
+lazy_static = "1.5.0"
+crossbeam-channel = "0.5.15"
+varpro = "0.13.3"
+nalgebra = "0.33.3"
+linreg = "0.2.0"
 
 [build-dependencies]
 shadow-rs = "1.4.0"
 
 [dev-dependencies]
-tempfile = "3.13"
 assert_cmd = "2.0.8"
 predicates = "2.1.5"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [profile.release]
-debug = 1
+codegen-units = 1
+lto = "fat"
+
+[profile.profiling]
+inherits = "release"
+debug = true
 
 [[bench]]
 name = "panacus_benchmark"
