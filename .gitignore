@@ -23,5 +23,5 @@ etc/package.json
 *.log
 *.bed
 *.json.gz
-.vs
 *.zst
+**/*.vs

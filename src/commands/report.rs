@@ -84,6 +84,6 @@ fn parse_report_args(args: &ArgMatches) -> Result<Vec<FileRun>, anyhow::Error> {
 # For more information see: https://github.com/codialab/panacus/wiki
                 "
         );
-        Ok(Vec::new())
+        Err(anyhow!("Missing YAML configuration!"))
     }
 }

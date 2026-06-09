@@ -1,12 +1,13 @@
-[![Rust Build](https://github.com/marschall-lab/panacus/actions/workflows/rust_build.yml/badge.svg)](https://github.com/marschall-lab/panacus/actions/workflows/rust_build.yml) [![Anaconda-Server Badge](https://anaconda.org/bioconda/panacus/badges/version.svg)](https://anaconda.org/bioconda/panacus) [![Anaconda-Server Badge](https://anaconda.org/bioconda/panacus/badges/platforms.svg)](https://anaconda.org/bioconda/panacus) [![Anaconda-Server Badge](https://anaconda.org/bioconda/panacus/badges/license.svg)](https://anaconda.org/bioconda/panacus)
+[![Rust Build](https://github.com/codialab/panacus/actions/workflows/rust_build.yml/badge.svg)](https://github.com/codialab/panacus/actions/workflows/rust_build.yml) [![Anaconda-Server Badge](https://anaconda.org/bioconda/panacus/badges/version.svg)](https://anaconda.org/bioconda/panacus) [![Anaconda-Server Badge](https://anaconda.org/bioconda/panacus/badges/platforms.svg)](https://anaconda.org/bioconda/panacus) [![Anaconda-Server Badge](https://anaconda.org/bioconda/panacus/badges/license.svg)](https://anaconda.org/bioconda/panacus)
 
 # A Counting Tool for Pangenome Graphs
 
 ![panacus is a counting tool for pangenome graphs](docs/panacus-illustration.png?raw=true "panacus is a counting tool for pangenome graphs")
 
-`panacus` is a tool for calculating statistics for [GFA](https://github.com/GFA-spec/GFA-spec/blob/master/GFA1.md) files. It supports GFA files with `P` and
+`panacus` is a tool for calculating statistics for pangenome files. It supports GFA files with `P` and
 `W` lines, but requires that the graph is `blunt`, i.e., nodes do not overlap and consequently, each link (`L`) points from the end of one segment
-(`S`) to the start of another.
+(`S`) to the start of another. These GFA files can be sqz-ified (see [sqz](https://github.com/codialab/sqz)). Additionally, it also supports
+VCF files.
 
 `panacus` supports the following calculations:
 
@@ -24,7 +25,8 @@ mamba install -c conda-forge -c bioconda panacus
 ```
 2. Create a file `report.yaml` with the following content:
 ```yaml
-- graph: ../graphs/test_graph.gfa    # Change this to a GFA file on your system
+- !Gfa
+  graph: ../graphs/test_graph.gfa    # Change this to a GFA file on your system
   analyses:
     - !Hist
       count_type: Bp
@@ -52,7 +54,7 @@ mamba install -c conda-forge -c bioconda panacus
 ### From binary release
 #### Linux x86\_64
 ```shell
-wget --no-check-certificate -c https://github.com/codialab/panacus/releases/download/v0.4.1/panacus-0.5.0_x86_64-unknown-linux-musl.tar.gz
+wget --no-check-certificate -c https://github.com/codialab/panacus/releases/download/v0.5.0/panacus-0.5.0_x86_64-unknown-linux-musl.tar.gz
 tar -xzvf panacus-0.5.0_x86_64-unknown-linux-musl.tar.gz
 
 # install the Python libraries necessary for panacus-visualize
@@ -67,7 +69,7 @@ panacus --help
 
 #### Mac OSX arm64
 ```shell
-wget --no-check-certificate -c https://github.com/codialab/panacus/releases/download/v0.4.1/panacus-0.5.0_aarch64-apple-darwin.tar.gz
+wget --no-check-certificate -c https://github.com/codialab/panacus/releases/download/v0.5.0/panacus-0.5.0_aarch64-apple-darwin.tar.gz
 tar -xzvf panacus-0.5.0_aarch64-apple-darwin.tar.gz
 
 # install the Python libraries necessary for panacus-visualize
@@ -83,7 +85,7 @@ panacus --help
 ### From repository
 `panacus` requires a working RUST build system (version >= 1.74.1) to build from source. See [here](https://www.rust-lang.org/tools/install) for more details.
 ```shell
-git clone git@github.com:marschall-lab/panacus.git
+git clone git@github.com:codialab/panacus.git
 
 cd panacus
 cargo build --release
