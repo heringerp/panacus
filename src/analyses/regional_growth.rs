@@ -52,7 +52,7 @@ impl MatrixBasedAnalysis for RegionalGrowth {
             .get_run_id()
             .to_lowercase()
             .replace(&[' ', '|', '\\'], "-");
-        let id_prefix = format!("regional-variation-{}", id_prefix);
+        let id_prefix = format!("regional-growth-{}", id_prefix);
         let items: Vec<ReportItem> = data
             .into_iter()
             .map(|(sequence, values)| {
