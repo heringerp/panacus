@@ -366,7 +366,6 @@ impl VcfParser {
 }
 
 struct Variant<'a, T> {
-    #[allow(dead_code)]
     chrom: &'a str,
     pos: usize,
     id: &'a str,
