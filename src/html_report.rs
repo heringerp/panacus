@@ -487,8 +487,9 @@ pub enum ReportItem {
         labels: Vec<String>,
         is_diverging: bool,
         contains_outliers: bool,
-        sequence: String,
-        values: Vec<Window>,
+        // Each chromosomal plot might contain multiple chromosomes
+        sequence: Vec<String>,
+        values: Vec<Vec<Window>>,
     },
 }
 
@@ -601,26 +602,37 @@ impl ReportItem {
                 }
 
                 let mut values = values;
-                for i in 0..values.len() {
-                    if i == values.len() - 1 {
-                        continue;
-                    }
+                for j in 0..values.len() {
+                    for i in 0..values[j].len() {
+                        if i == values[j].len() - 1 {
+                            continue;
+                        }
 
-                    // if two following values are continuous
-                    // introduce overlap in plot (avoids gaps due to rounding errors)
-                    if values[i].end == values[i + 1].start {
-                        values.get_mut(i).expect("values has value").end = values[i + 1].end;
+                        // if two following values are continuous
+                        // introduce overlap in plot (avoids gaps due to rounding errors)
+                        if values[j][i].end == values[j][i + 1].start {
+                            values[j].get_mut(i).expect("values has value").end =
+                                values[j][i + 1].end;
+                        }
                     }
                 }
 
                 let data: Vec<String> = values
                     .into_iter()
-                    .map(|w| {
-                        let mut text = format!("{{'x': {}, 'x2': {}", w.start, w.end,);
-                        for (i, label) in labels.iter().enumerate() {
-                            text.push_str(&format!(", '{}': {}", label, w.values[i]));
-                        }
-                        text.push_str("}");
+                    .map(|r| {
+                        let inner = r
+                            .into_iter()
+                            .map(|w| {
+                                let mut text = format!("{{'x': {}, 'x2': {}", w.start, w.end,);
+                                for (i, label) in labels.iter().enumerate() {
+                                    text.push_str(&format!(", '{}': {}", label, w.values[i]));
+                                }
+                                text.push_str("}");
+                                text
+                            })
+                            .collect::<Vec<String>>()
+                            .join(",");
+                        let text = format!("[{inner}]");
                         text
                     })
                     .collect();
@@ -630,8 +642,14 @@ impl ReportItem {
                     data_text.push_str(", ");
                 }
                 data_text.push_str("]}");
+                let sequences = sequence
+                    .into_iter()
+                    .map(|x| format!("'{x}'"))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                let sequences = format!("[{sequences}]");
                 let js_object = format!(
-                    "new Chromosomal('{id}', '{name}', {:?}, {is_diverging}, {contains_outliers}, '{sequence}', {data_text})", labels
+                    "new Chromosomal('{id}', '{name}', {:?}, {is_diverging}, {contains_outliers}, {sequences}, {data_text})", labels
                 );
                 let data = HashMap::from([("id".to_string(), to_json(&id))]);
                 Ok((

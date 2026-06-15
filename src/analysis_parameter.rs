@@ -87,10 +87,12 @@ pub enum AnalysisParameter {
     RegionalVariation {
         #[serde(default = "get_window_size")]
         window_size: usize,
+        order: Option<String>,
     },
     RegionalGrowth {
         #[serde(default = "get_window_size")]
         window_size: usize,
+        order: Option<String>,
     },
     SectionGrowth {
         sections: String,
@@ -137,11 +139,11 @@ impl AnalysisParameter {
                 Analysis::MatrixBased(Box::new(Similarity::new(cluster_method)))
             }
             Self::Info => Analysis::MatrixBased(Box::new(Info::new())),
-            Self::RegionalVariation { window_size } => {
-                Analysis::MatrixBased(Box::new(RegionalVariation::new(window_size)))
+            Self::RegionalVariation { window_size, order } => {
+                Analysis::MatrixBased(Box::new(RegionalVariation::new(window_size, order)))
             }
-            Self::RegionalGrowth { window_size } => {
-                Analysis::MatrixBased(Box::new(RegionalGrowth::new(window_size)))
+            Self::RegionalGrowth { window_size, order } => {
+                Analysis::MatrixBased(Box::new(RegionalGrowth::new(window_size, order)))
             }
             _ => unimplemented!("Other analyses have not been yet implemented"),
         }

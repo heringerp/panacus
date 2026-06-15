@@ -6,6 +6,7 @@ use varpro::prelude::*;
 use varpro::{problem::SeparableProblemBuilder, solvers::levmar::LevMarSolver};
 
 use crate::analyses::growth::calc_growth;
+use crate::analyses::regional_helpers::sort_values;
 use crate::util::Threshold;
 use crate::{
     analyses::MatrixBasedAnalysis,
@@ -16,6 +17,7 @@ use crate::{
 };
 
 pub struct RegionalGrowth {
+    order: Option<String>,
     window_size: usize,
     cache: OnceCell<Vec<(String, Vec<(Growth, usize, usize)>)>>,
 }
@@ -53,7 +55,7 @@ impl MatrixBasedAnalysis for RegionalGrowth {
             .to_lowercase()
             .replace(&[' ', '|', '\\'], "-");
         let id_prefix = format!("regional-growth-{}", id_prefix);
-        let items: Vec<ReportItem> = data
+        let (mut sequences, mut values): (Vec<String>, Vec<Vec<Window>>) = data
             .into_iter()
             .map(|(sequence, values)| {
                 let values = values
@@ -64,21 +66,25 @@ impl MatrixBasedAnalysis for RegionalGrowth {
                         values: vec![v.0, v.1, v.2],
                     })
                     .collect();
-                ReportItem::Chromosomal {
-                    id: format!("{id_prefix}-{}", sequence.to_string()),
-                    name: "PLACEHOLDER".to_string(),
-                    labels: vec![
-                        "2x increase".to_string(),
-                        "3x increase".to_string(),
-                        "5x increase".to_string(),
-                    ],
-                    is_diverging: true,
-                    contains_outliers: false,
-                    sequence: sequence.to_string(),
-                    values,
-                }
+                (sequence.clone(), values)
             })
-            .collect();
+            .unzip();
+
+        self.sort_values(&mut sequences, &mut values);
+
+        let chromosomal = vec![ReportItem::Chromosomal {
+            id: format!("{id_prefix}-Chrom"),
+            name: "PLACEHOLDER".to_string(),
+            labels: vec![
+                "2x increase".to_string(),
+                "3x increase".to_string(),
+                "5x increase".to_string(),
+            ],
+            is_diverging: true,
+            contains_outliers: false,
+            sequence: sequences,
+            values,
+        }];
 
         let table_text = self.generate_table(matrix)?;
         let table_text = format!("`{}`", table_text);
@@ -89,7 +95,7 @@ impl MatrixBasedAnalysis for RegionalGrowth {
             run_name: matrix.get_run_name().to_string(),
             run_id: id_prefix,
             countable: matrix.get_feature_type().to_string(),
-            items,
+            items: chromosomal,
             plot_downloads: get_default_plot_downloads(),
         }];
         Ok(regional_variation_tabs)
@@ -101,10 +107,17 @@ impl MatrixBasedAnalysis for RegionalGrowth {
 }
 
 impl RegionalGrowth {
-    pub fn new(window_size: usize) -> Self {
+    pub fn new(window_size: usize, order: Option<String>) -> Self {
         Self {
+            order,
             window_size,
             cache: OnceCell::new(),
+        }
+    }
+
+    fn sort_values(&self, reference_names: &mut Vec<String>, windows: &mut Vec<Vec<Window>>) {
+        if let Some(filename) = self.order.as_ref() {
+            sort_values(filename, reference_names, windows);
         }
     }
 

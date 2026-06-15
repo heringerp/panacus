@@ -1,10 +1,51 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    fs::File,
+    io::{BufReader, Read},
     iter::{self},
     usize,
 };
 
-use crate::file_formats::gfa_parser::{Edge, ItemId, Orientation, PathSegment};
+use crate::{
+    file_formats::gfa_parser::{Edge, ItemId, Orientation, PathSegment},
+    html_report,
+};
+
+pub fn sort_values(
+    file: &str,
+    reference_names: &mut Vec<String>,
+    windows: &mut Vec<Vec<html_report::Window>>,
+) {
+    let f = File::open(file).expect("Order file must exist");
+    let mut reader = BufReader::new(f);
+    let mut buf = String::new();
+    reader
+        .read_to_string(&mut buf)
+        .expect("Order file must be readable");
+    let order_names: Vec<_> = buf.lines().collect();
+    let lookup: Vec<usize> = reference_names
+        .iter()
+        .map(|r| {
+            order_names
+                .iter()
+                .position(|&o| o == r)
+                .expect("Ordering contains all references")
+        })
+        .collect();
+    reorder_in_place(reference_names, lookup.clone());
+    reorder_in_place(windows, lookup.clone());
+}
+
+fn reorder_in_place<T>(x: &mut [T], mut indices: Vec<usize>) {
+    for i in 0..x.len() {
+        while indices[i] != i {
+            let target = indices[i];
+
+            x.swap(i, target);
+            indices.swap(i, target);
+        }
+    }
+}
 
 pub fn get_close_nodes(
     ref_nodes: &Vec<(ItemId, Orientation)>,

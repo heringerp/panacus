@@ -602,17 +602,56 @@ for (let key in objects.datasets) {
         let c = element;
         let thisId = 'chart-chromosomal-' + c.id;
         // buildPlotDownload(myChart, h.id, fname);
+
+        const currMaxes = c.data.values.map(dataset => {
+          const x2Values = dataset.map(row => row.x2);
+          return Math.max(...x2Values);
+        });
+        const maxMax = Math.max(...currMaxes);
+        const totalWidth = 1100;
+        const calculatedWidths = currMaxes.map(currMax => {
+          return totalWidth * (currMax / maxMax);
+        });
+        const generated_plots = c.data.values.map((dataset, index) => {
+           return {
+              "data": { "values": dataset },
+              "params": [ { "name": `zoom_${index}`, "select": "interval", "bind": "scales" } ],
+              "width": calculatedWidths[index],
+              "transform": [
+                {
+                  "fold": c.labels,
+                  "as": [ "metric_type", "metric_value" ]
+                },
+                { "filter": "datum.metric_type == metric_select" }
+              ],
+              "mark": { "type": "rect", "clip": true, "tooltip": true },
+              "title": { "text": c.sequence[index], "anchor": "start", "frame": "group" },
+              "encoding": {
+                "x": {
+                  "field": "x",
+                  "type": "quantitative",
+                  "scale": { "nice": false, "zero": false },
+                  "axis": { "domain": false, "grid": false, "ticks": true, "labels": true },
+                  "title": "Position in bps"
+                },
+                "x2": { "field": "x2" },
+                "color": {
+                  "field": "metric_value",
+                  "type": "quantitative",
+                  "scale": {
+                    "scheme": { "expr": "color_range" },
+                    "type": "linear",
+                    "domainMid": { "expr": "domain_mid" }
+                  }
+                }
+              },
+              "view": { "stroke": "black", "strokeWidth": 2, "cornerRadius": 20 }
+            }
+        });
         let mySpec = {
             "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
             "description": "Chromosomal plot",
-            "data": c.data,
-            "width": 1100,
             "params": [
-                {
-                    "name": "grid",
-                    "select": "interval",
-                    "bind": "scales"
-                },
                 {
                   "name": "metric_select",
                   "value": c.labels[0],
@@ -622,67 +661,25 @@ for (let key in objects.datasets) {
                     "name": "Variable: "
                   }
                 },
-                {
-                  "name": "color_range",
-                  "expr": "metric_select == 'Growth' ? 'redyellowblue' : 'yelloworangered'"
-                },
-                {
-                    "name": "domain_mid",
-                    "expr": "metric_select == 'Growth' ? 1 : null"
-                }
-            ],
-            "transform": [
-                {
-                  "fold": c.labels,
-                  "as": ["metric_type", "metric_value"]
-                },
-                {
-                  "filter": "datum.metric_type == metric_select"
-                }
-            ],
-            "mark": {
-                "type": "rect",
-                "clip": true,
-                "tooltip": true
-            },
-            "title": {
-                "text": c.sequence,
-                "anchor": "start"
-            },
-            "encoding": {
-                "x": {
-                    "field": "x",
-                    "type": "quantitative",
-                    "scale": {"nice": false, "zero": false},
-                    "axis": {"domain": false, "grid": false, "ticks": true, "labels": true},
-                    "title": "Position in bps"
-                },
-                "x2": {
-                    "field": "x2",
-                },
-                "color": {
-                    "field": "metric_value",
-                    "type": "quantitative",
-                    "scale": {
-                      "scheme": {"expr": "color_range"} ,
-                      "type": "linear",
-                      "domainMid": {"expr": "domain_mid"}
-                    }
-                }
-            },
-            "config": {
-                "axis": {"grid": true, "tickBand": "extent"},
-                "view": {"stroke": "black", "strokeWidth": 2, "cornerRadius": 20}
-            }
+                { "name": "color_range", "expr": "'plasma'" },
+                { "name": "domain_mid", "expr": "metric_select == 'Growth' ? 1 : null" }
+              ],
+              "resolve": { "scale": { "x": "independent" } },
+              "vconcat": generated_plots,
+              "config": { "axis": { "grid": true, "tickBand": "extent" } }
           };
 
         function render(scaleType, thisId, vlSpec, addListeners) {
             const copied_spec = JSON.parse(JSON.stringify(vlSpec)); // deep copy
             console.log("Setting scale type: " + scaleType);
             if (scaleType == "log") {
-                copied_spec.encoding.color.scale.type = "symlog"; // set scale type
+                for (var i=0; i < copied_spec.vconcat.length; i++) {
+                    copied_spec.vconcat[i].encoding.color.scale.type = "symlog"; // set scale type
+                }
             } else {
-                copied_spec.encoding.color.scale.type = "linear"; // set scale type
+                for (var i=0; i < copied_spec.vconcat.length; i++) {
+                    copied_spec.vconcat[i].encoding.color.scale.type = "linear"; // set scale type
+                }
             }
             let opt = {
                 "actions": false,
