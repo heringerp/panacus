@@ -42,6 +42,7 @@ pub enum FileRun {
         split_haplotypes: bool,
         #[serde(default)]
         count_type: VcfCountType,
+        exclude: Option<String>,
         analyses: Vec<AnalysisParameter>,
     },
 }

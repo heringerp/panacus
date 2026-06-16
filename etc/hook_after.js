@@ -622,7 +622,8 @@ for (let key in objects.datasets) {
                   "fold": c.labels,
                   "as": [ "metric_type", "metric_value" ]
                 },
-                { "filter": "datum.metric_type == metric_select" }
+                { "filter": "datum.metric_type == metric_select" },
+                { "filter": "datum.metric_value != 0" }
               ],
               "mark": { "type": "rect", "clip": true, "tooltip": true },
               "title": { "text": c.sequence[index], "anchor": "start", "frame": "group" },
@@ -674,7 +675,7 @@ for (let key in objects.datasets) {
             console.log("Setting scale type: " + scaleType);
             if (scaleType == "log") {
                 for (var i=0; i < copied_spec.vconcat.length; i++) {
-                    copied_spec.vconcat[i].encoding.color.scale.type = "symlog"; // set scale type
+                    copied_spec.vconcat[i].encoding.color.scale.type = "log"; // set scale type
                 }
             } else {
                 for (var i=0; i < copied_spec.vconcat.length; i++) {

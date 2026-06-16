@@ -1,7 +1,7 @@
 use std::{
     fmt::Display,
     fs::File,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
     str::SplitWhitespace,
 };
 
@@ -21,6 +21,7 @@ pub struct VcfParser {
     /// this requires the VCF to have constant ploidy for this sample
     split_haplotypes: bool,
     current_variant_id: usize,
+    exclude: Vec<(String, usize, usize)>,
 }
 
 impl FileFormatParser for VcfParser {
@@ -70,11 +71,51 @@ impl VcfStats {
 }
 
 impl VcfParser {
-    pub fn new(filename: &str, count_type: VcfCountType, split_haplotypes: bool) -> Result<Self> {
+    pub fn new(
+        filename: &str,
+        count_type: VcfCountType,
+        split_haplotypes: bool,
+        exclude: Option<String>,
+    ) -> Result<Self> {
+        let exclude = match exclude {
+            Some(filename) => {
+                let f = File::open(filename).expect("Exclude file must exist");
+                let mut reader = BufReader::new(f);
+                let mut buf = String::new();
+                reader
+                    .read_to_string(&mut buf)
+                    .expect("Exclude file must be readable");
+                let res = buf
+                    .lines()
+                    .map(|l| {
+                        let mut fields = l.split('\t');
+                        let ref_name = fields
+                            .next()
+                            .expect("Exclude file should not contain empty lines")
+                            .to_owned();
+                        let start = fields
+                            .next()
+                            .expect("Three columns are required")
+                            .parse::<usize>()
+                            .unwrap();
+                        let end = fields
+                            .next()
+                            .expect("Three columns are required")
+                            .parse::<usize>()
+                            .unwrap();
+                        (ref_name, start, end)
+                    })
+                    .collect();
+                res
+            }
+            None => Vec::new(),
+        };
+
         Ok(Self {
             filename: filename.to_owned(),
             count_type,
             split_haplotypes,
+            exclude,
             current_variant_id: 1,
         })
     }
@@ -324,6 +365,9 @@ impl VcfParser {
             .next()
             .ok_or_else(|| anyhow::anyhow!("Variant needs pos field!"))?
             .parse()?;
+        if !self.is_variant_included(chrom, pos) {
+            return Ok(Vec::new());
+        }
         let id = fields
             .next()
             .ok_or_else(|| anyhow::anyhow!("Variant needs id field!"))?;
@@ -362,6 +406,13 @@ impl VcfParser {
                 value,
             })
             .collect())
+    }
+
+    fn is_variant_included(&self, chrom: &str, pos: usize) -> bool {
+        !self
+            .exclude
+            .iter()
+            .any(|(r, s, e)| r == chrom && pos >= *s && pos <= *e)
     }
 }
 
@@ -481,7 +532,7 @@ chr10	7	>13046>13130_6	C	G	60	.	AC=1;AF=0.0212766;AN=47;NS=232;LV=0;ORIGIN=chr10
     #[test]
     fn test_vcf_parse_line_to_count_haplotypes() {
         let line = "20\t14370\trs6054257\tG\tA\t29\tPASS\tNS=3;DP=14;AF=0.5;DB;H2\tGT:GQ:DP:HQ\t0|0:48:1:51,51\t1|0:48:8:51,51\t1/1:43:5:.,.";
-        let parser = VcfParser::new("", VcfCountType::Variants, true).unwrap();
+        let parser = VcfParser::new("", VcfCountType::Variants, true, None).unwrap();
         let mut variants = parser.parse_variant_line_to_count(line).unwrap();
         assert_eq!(variants.len(), 1);
         let variant = variants.remove(0);
@@ -495,7 +546,7 @@ chr10	7	>13046>13130_6	C	G	60	.	AC=1;AF=0.0212766;AN=47;NS=232;LV=0;ORIGIN=chr10
     #[test]
     fn test_vcf_parse_line_to_count_samples() {
         let line = "20\t14370\trs6054257\tG\tA\t29\tPASS\tNS=3;DP=14;AF=0.5;DB;H2\tGT:GQ:DP:HQ\t0|0:48:1:51,51\t1|0:48:8:51,51\t1/1:43:5:.,.";
-        let parser = VcfParser::new("", VcfCountType::Variants, false).unwrap();
+        let parser = VcfParser::new("", VcfCountType::Variants, false, None).unwrap();
         let mut variants = parser.parse_variant_line_to_count(line).unwrap();
         assert_eq!(variants.len(), 1);
         let variant = variants.remove(0);
@@ -509,7 +560,7 @@ chr10	7	>13046>13130_6	C	G	60	.	AC=1;AF=0.0212766;AN=47;NS=232;LV=0;ORIGIN=chr10
     #[test]
     fn test_vcf_parse_line_to_list_samples() {
         let line = "20\t14370\trs6054257\tG\tA\t29\tPASS\tNS=3;DP=14;AF=0.5;DB;H2\tGT:GQ:DP:HQ\t0|0:48:1:51,51\t1|0:48:8:51,51\t1/1:43:5:.,.";
-        let parser = VcfParser::new("", VcfCountType::Variants, false).unwrap();
+        let parser = VcfParser::new("", VcfCountType::Variants, false, None).unwrap();
         let mut variants = parser.parse_variant_line_to_allele_list(line).unwrap();
         assert_eq!(variants.len(), 1);
         let variant = variants.remove(0);
@@ -523,7 +574,7 @@ chr10	7	>13046>13130_6	C	G	60	.	AC=1;AF=0.0212766;AN=47;NS=232;LV=0;ORIGIN=chr10
     #[test]
     fn test_vcf_parse_line_to_list_haplotypes() {
         let line = "20\t14370\trs6054257\tG\tA\t29\tPASS\tNS=3;DP=14;AF=0.5;DB;H2\tGT:GQ:DP:HQ\t0|0:48:1:51,51\t1|0:48:8:51,51\t./1:43:5:.,.";
-        let parser = VcfParser::new("", VcfCountType::Variants, true).unwrap();
+        let parser = VcfParser::new("", VcfCountType::Variants, true, None).unwrap();
         let mut variants = parser.parse_variant_line_to_allele_list(line).unwrap();
         assert_eq!(variants.len(), 1);
         let variant = variants.remove(0);
@@ -571,26 +622,26 @@ chr10	7	>13046>13130_6	C	G	60	.	AC=1;AF=0.0212766;AN=47;NS=232;LV=0;ORIGIN=chr10
 
     #[test]
     fn test_get_split_haplotype_text() {
-        let parser = VcfParser::new("", VcfCountType::default(), true).unwrap();
+        let parser = VcfParser::new("", VcfCountType::default(), true, None).unwrap();
         assert_eq!(parser.get_split_haplotype_text(), "haplotypes");
     }
 
     #[test]
     fn test_get_split_sample_text() {
-        let parser = VcfParser::new("", VcfCountType::default(), false).unwrap();
+        let parser = VcfParser::new("", VcfCountType::default(), false, None).unwrap();
         assert_eq!(parser.get_split_haplotype_text(), "samples");
     }
 
     #[test]
     fn test_get_variant_id() {
-        let mut parser = VcfParser::new("", VcfCountType::default(), false).unwrap();
+        let mut parser = VcfParser::new("", VcfCountType::default(), false, None).unwrap();
         let id = parser.get_variant_id();
         assert!(id < parser.get_variant_id());
     }
 
     #[test]
     fn test_generate_path_names_for_samples() {
-        let parser = VcfParser::new("", VcfCountType::default(), false).unwrap();
+        let parser = VcfParser::new("", VcfCountType::default(), false, None).unwrap();
         let samples = vec!["1".to_string(), "2".to_string(), "3".to_string()];
         let feature = Vec::new();
         let path_names = parser.generate_path_names(&samples, &feature);
@@ -599,7 +650,7 @@ chr10	7	>13046>13130_6	C	G	60	.	AC=1;AF=0.0212766;AN=47;NS=232;LV=0;ORIGIN=chr10
 
     #[test]
     fn test_generate_path_names_for_haplotypes() {
-        let parser = VcfParser::new("", VcfCountType::default(), true).unwrap();
+        let parser = VcfParser::new("", VcfCountType::default(), true, None).unwrap();
         let samples = vec!["a".to_string(), "b".to_string(), "c".to_string()];
         let feature = vec![vec![1], vec![1, 1, 1], vec![1, 1]];
         let path_names = parser.generate_path_names(&samples, &feature);
@@ -616,7 +667,7 @@ chr10	7	>13046>13130_6	C	G	60	.	AC=1;AF=0.0212766;AN=47;NS=232;LV=0;ORIGIN=chr10
 
     #[test]
     fn test_generate_hist_samples_allele_length() {
-        let parser = Box::new(VcfParser::new("", VcfCountType::AltLength, false).unwrap());
+        let parser = Box::new(VcfParser::new("", VcfCountType::AltLength, false, None).unwrap());
         let hist = parser.generate_hist_from_reader(VCF_TEST.as_bytes());
         assert_eq!(hist.get_number_of_features(), 449);
         assert_eq!(hist.get_maximum_coverage(), 232);
@@ -624,7 +675,7 @@ chr10	7	>13046>13130_6	C	G	60	.	AC=1;AF=0.0212766;AN=47;NS=232;LV=0;ORIGIN=chr10
 
     #[test]
     fn test_generate_hist_samples_variants() {
-        let parser = Box::new(VcfParser::new("", VcfCountType::Variants, false).unwrap());
+        let parser = Box::new(VcfParser::new("", VcfCountType::Variants, false, None).unwrap());
         let hist = parser.generate_hist_from_reader(VCF_TEST.as_bytes());
         assert_eq!(hist.get_number_of_features(), 13);
         assert_eq!(hist.get_maximum_coverage(), 232);
@@ -635,7 +686,7 @@ chr10	7	>13046>13130_6	C	G	60	.	AC=1;AF=0.0212766;AN=47;NS=232;LV=0;ORIGIN=chr10
 
     #[test]
     fn test_generate_matrix_samples_variants() {
-        let parser = Box::new(VcfParser::new("", VcfCountType::Variants, false).unwrap());
+        let parser = Box::new(VcfParser::new("", VcfCountType::Variants, false, None).unwrap());
         let matrix = parser.generate_matrix_from_reader(VCF_TEST.as_bytes());
         assert_eq!(matrix.get_feature_count(), 13);
         assert_eq!(matrix.get_path_names().len(), 232);
@@ -644,14 +695,14 @@ chr10	7	>13046>13130_6	C	G	60	.	AC=1;AF=0.0212766;AN=47;NS=232;LV=0;ORIGIN=chr10
     #[test]
     #[should_panic]
     fn test_hist_panic_on_emtpy_open() {
-        let parser = Box::new(VcfParser::new("", VcfCountType::AltLength, false).unwrap());
+        let parser = Box::new(VcfParser::new("", VcfCountType::AltLength, false, None).unwrap());
         parser.generate_hist();
     }
 
     #[test]
     #[should_panic]
     fn test_matrix_panic_on_emtpy_open() {
-        let parser = Box::new(VcfParser::new("", VcfCountType::AltLength, false).unwrap());
+        let parser = Box::new(VcfParser::new("", VcfCountType::AltLength, false, None).unwrap());
         parser.generate_matrix();
     }
 }

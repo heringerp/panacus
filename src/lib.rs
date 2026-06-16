@@ -430,9 +430,15 @@ fn get_file_parser(
             file,
             split_haplotypes,
             count_type,
+            exclude,
             analyses,
         } => Ok((
-            Box::new(VcfParser::new(&file, count_type, split_haplotypes)?),
+            Box::new(VcfParser::new(
+                &file,
+                count_type,
+                split_haplotypes,
+                exclude,
+            )?),
             analyses,
         )),
     }
