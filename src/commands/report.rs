@@ -74,9 +74,9 @@ fn parse_report_args(args: &ArgMatches) -> Result<Vec<FileRun>, anyhow::Error> {
 
 - graph: ../graphs/test_graph.gfa
   grouping: Haplotype
+  count_type: Bp
   analyses:
     - !Hist
-      count_type: Bp
     - !Growth
       coverage: 1,1,2
       quorum: 0,0.9,0
