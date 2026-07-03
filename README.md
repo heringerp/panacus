@@ -27,9 +27,9 @@ mamba install -c conda-forge -c bioconda panacus
 ```yaml
 - !Gfa
   graph: ../graphs/test_graph.gfa    # Change this to a GFA file on your system
+  count_type: Bp
   analyses:
     - !Hist
-      count_type: Bp
     - !Growth
       coverage: 1,1,2
       quorum: 0,0.9,0
