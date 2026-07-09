@@ -217,7 +217,6 @@ impl CoverageMatrix {
     ) -> (Hist, Vec<usize>) {
         let (abacus, used_features) =
             self.get_abacus_and_used_features_with_coverage(features, paths, c);
-        log::info!("Hist-needed abacus: {:?}", abacus);
         let mut hist = Hist::from_maximum_coverage(
             paths.len(),
             self.feature_type.to_string(),

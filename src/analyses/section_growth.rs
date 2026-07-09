@@ -34,7 +34,6 @@ impl MatrixBasedAnalysis for SectionGrowth {
         let inner = self.inner.as_ref().unwrap();
         let mut res = String::new();
 
-        log::info!("Section index: {:?}", inner.sections);
         res.push_str(&format!(
             "# {}\n",
             std::env::args().collect::<Vec<String>>().join(" ")
@@ -53,20 +52,14 @@ impl MatrixBasedAnalysis for SectionGrowth {
         }
         res.push_str("\n");
 
-        res.push_str(&format!("0\t{}", self.section_order[0]));
-        for _ in inner.thresholds.coverage.iter() {
-            res.push_str(&format!("\t{}", f64::NAN));
-        }
-        res.push_str("\n");
         let mut section_index = 0;
-        // res.push_str(&format!("0\t{}\t0\n", inner.sections[section_index].0));
         for idx in 0..inner.growths[0].len() {
             if section_index < inner.sections.len() - 1
                 && idx >= inner.sections[section_index + 1].1
             {
                 section_index += 1;
             }
-            res.push_str(&format!("{}\t{}", idx + 1, inner.sections[section_index].0,));
+            res.push_str(&format!("{}\t{}", idx, inner.sections[section_index].0,));
             for j in 0..inner.thresholds.coverage.len() {
                 res.push_str(&format!("\t{}", inner.growths[j][idx]));
             }
@@ -163,10 +156,10 @@ impl SectionGrowth {
             let paths = &self.sections[section];
             let (current_abacus, _) =
                 matrix.get_abacus_and_used_features_with_coverage(None, paths, &c);
-            log::info!("Current abacus: {:?}", current_abacus);
+            // log::info!("Current abacus: {:?}", current_abacus);
             let (previous_abacus, _) =
                 matrix.get_abacus_and_used_features_with_coverage(None, &path_collection, &c);
-            log::info!("Previous abacus: {:?}", previous_abacus);
+            // log::info!("Previous abacus: {:?}", previous_abacus);
             let hist = Hist3D::from_abaci(
                 &previous_abacus,
                 path_collection.len(),
@@ -198,16 +191,9 @@ impl SectionGrowth {
             coverage: vec![Threshold::Absolute(1); q.len()],
             quorum: q,
         };
-        let (q0_thresholds, other_thresholds) = Self::split_thresholds(&thresholds);
-        eprintln!(
-            "q0: {}, other: {}",
-            q0_thresholds.coverage.len(),
-            other_thresholds.coverage.len()
-        );
-        // let q0_growths = self.get_growths_for_c_q0(c, gb);
+        // let (q0_thresholds, other_thresholds) = Self::split_thresholds(&thresholds);
         let other_growths = self.get_growths_for_c_q(c, thresholds, matrix);
         let full_growths = other_growths;
-        // full_growths.extend(other_growths);
 
         full_growths
     }
@@ -232,8 +218,6 @@ impl SectionGrowth {
                     .expect(&format!("Group {} is not a group", fields[0])),
             );
         }
-        eprintln!("section_order: {:?}", self.section_order);
-        eprintln!("sections: {:?}", self.sections);
 
         let mut section_index = vec![];
         let mut rolling_index = 0;
@@ -248,7 +232,7 @@ impl SectionGrowth {
         if self.inner.is_some() {
             return Ok(());
         }
-        let section_index = self.get_sections(matrix)?;
+        let mut section_index = self.get_sections(matrix)?;
         let thresholds = ThresholdContainer::parse_params(&self.quorum, &self.coverage)?;
 
         let coverage_quorums: HashMap<usize, Vec<_>> = thresholds
@@ -277,6 +261,14 @@ impl SectionGrowth {
             quorum: quorum_sorted,
         };
 
+        for growth in full_growths.iter_mut() {
+            growth.insert(0, f64::NAN);
+        }
+        for val in section_index.iter_mut().skip(1) {
+            let x = &mut val.1;
+            *x += 1;
+        }
+
         self.inner = Some(InnerGrowth {
             growths: full_growths,
             sections: section_index,
@@ -285,33 +277,33 @@ impl SectionGrowth {
         Ok(())
     }
 
-    fn split_thresholds(
-        thresholds: &ThresholdContainer,
-    ) -> (ThresholdContainer, ThresholdContainer) {
-        let mut first_c = Vec::new();
-        let mut first_q = Vec::new();
-        let mut second_c = Vec::new();
-        let mut second_q = Vec::new();
-        for (c, q) in thresholds.coverage.iter().zip(thresholds.quorum.iter()) {
-            if q.to_relative(1) == 0.0 {
-                first_c.push(*c);
-                first_q.push(*q);
-            } else {
-                second_c.push(*c);
-                second_q.push(*q);
-            }
-        }
-        (
-            ThresholdContainer {
-                coverage: first_c,
-                quorum: first_q,
-            },
-            ThresholdContainer {
-                coverage: second_c,
-                quorum: second_q,
-            },
-        )
-    }
+    // fn split_thresholds(
+    //     thresholds: &ThresholdContainer,
+    // ) -> (ThresholdContainer, ThresholdContainer) {
+    //     let mut first_c = Vec::new();
+    //     let mut first_q = Vec::new();
+    //     let mut second_c = Vec::new();
+    //     let mut second_q = Vec::new();
+    //     for (c, q) in thresholds.coverage.iter().zip(thresholds.quorum.iter()) {
+    //         if q.to_relative(1) == 0.0 {
+    //             first_c.push(*c);
+    //             first_q.push(*q);
+    //         } else {
+    //             second_c.push(*c);
+    //             second_q.push(*q);
+    //         }
+    //     }
+    //     (
+    //         ThresholdContainer {
+    //             coverage: first_c,
+    //             quorum: first_q,
+    //         },
+    //         ThresholdContainer {
+    //             coverage: second_c,
+    //             quorum: second_q,
+    //         },
+    //     )
+    // }
 }
 
 struct InnerGrowth {
@@ -339,7 +331,7 @@ impl Hist3D {
             "Abaci of Hist3D need to have the same length!"
         );
         let coverage = Self::construct_hist_bps(a, n_a, b, n_b, matrix);
-        log::info!("Coverage vec: {:?}", coverage);
+        // log::info!("Coverage vec: {:?}", coverage);
         Self { coverage }
     }
 
@@ -376,7 +368,7 @@ impl Hist3D {
         hist_aux: &ThresholdContainer,
         insert_zero: bool,
     ) -> Vec<Vec<f64>> {
-        self.to_tsv();
+        // self.to_tsv();
         let mut growths: Vec<Vec<f64>> = hist_aux
             .coverage
             .par_iter()
@@ -411,7 +403,6 @@ impl Hist3D {
         let mut pangrowth: Vec<f64> = vec![0.0; n2];
 
         log::info!("Calculating quorum: {}, c: {}", quorum, c);
-        // eprintln!("hist3d: {:?}", self.coverage);
 
         for m in 1..n2 + 1 {
             let mut res = 0.0;

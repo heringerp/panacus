@@ -361,7 +361,10 @@ for (let key in objects.datasets) {
                 "type": "quantitative",
                 "scale": {
                     "nice": false
-                }
+                },
+		"axis": {
+		    "tickMinStep": 1
+		}
             };
         } else {
             mark_type = "line";
@@ -390,7 +393,10 @@ for (let key in objects.datasets) {
         let layer_values = [
 
 {
-      "mark": "rect",
+      "mark": {
+          "type": "rect",
+	  "opacity": 0.7
+      },
       "data": {
         "values": separator_values
               },
