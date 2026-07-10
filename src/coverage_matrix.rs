@@ -259,11 +259,13 @@ impl CoverageMatrix {
             let mut path_idx = 0;
             let mut count = 0;
             let occurrences = self.matrix.get_occurrences(*feature);
+            if occurrences.len() < c.to_absolute(self.count_of_features) {
+                continue;
+            }
             // log::info!(
-            //     "Looking at feature: {} | {:?}, {:?}",
+            //     "Looking at feature: {} | {}",
             //     *feature,
-            //     occurrences,
-            //     paths
+            //     occurrences.len(),
             // );
             for o in occurrences {
                 let o = *o as usize;
@@ -280,10 +282,10 @@ impl CoverageMatrix {
                 }
             }
             // log::info!("Count: {}", count);
-            if count >= c.to_absolute(self.count_of_features) {
-                non_zeroes.push(*feature);
-                abacus[*feature] = count;
-            }
+            // if count >= c.to_absolute(self.count_of_features) {
+            non_zeroes.push(*feature);
+            abacus[*feature] = count;
+            // }
         }
         (abacus, non_zeroes)
     }
