@@ -680,7 +680,7 @@ impl GfaParser {
                 .map(|(new_idx, old_idx)| (old_idx, new_idx))
                 .collect()
         });
-        log::info!("Translation table: {:?}", translation_of_ids);
+        //log::info!("Translation table: {:?}", translation_of_ids);
         for (idx, group) in groups.iter().enumerate() {
             let (start, end) = (
                 item_table.id_prefsum[idx] as usize,
