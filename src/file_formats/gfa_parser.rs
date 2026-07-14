@@ -9,6 +9,7 @@ use crate::{
         FileFormatParser,
     },
     hist::Hist,
+    html_report::ReportItem,
     util::{
         averageu32, median_already_sorted, n50_already_sorted, CountType, GroupSize, ItemIdSize,
     },
@@ -92,8 +93,16 @@ impl FileFormatParser for GfaParser {
             Some(r) => vec![PathSegment::from_str(r)],
             None => vec![],
         };
-        let (item_table, path_names, feature_lengths, feature_names, path_lengths, mut positions) =
-            self.get_cleaned_item_table(
+        let (
+            item_table,
+            path_names,
+            feature_lengths,
+            feature_names,
+            path_lengths,
+            group_lengths,
+            mut positions,
+        ) = self
+            .get_cleaned_item_table(
                 &self.graph_mask,
                 &self.graph_storage,
                 self.count_type,
@@ -101,7 +110,7 @@ impl FileFormatParser for GfaParser {
             )
             .expect("Can parse GFA file");
         positions.cleanup();
-        let file_info = self.get_file_info_value(path_lengths);
+        let file_info = self.get_file_info_value(path_lengths, group_lengths);
         let mut matrix = CoverageMatrix::new(
             self.count_type.to_string(),
             self.get_run_id(),
@@ -281,7 +290,11 @@ impl GfaParser {
         })
     }
 
-    fn get_file_info_value(&self, paths_len: HashMap<PathSegment, (u32, u32)>) -> FileInfo {
+    fn get_file_info_value(
+        &self,
+        paths_len: HashMap<PathSegment, (u32, u32)>,
+        group_lens: HashMap<String, f64>,
+    ) -> FileInfo {
         // Created here to satisfy the borrow checker
         let empty_degree = vec![0, 0];
         let degree = self.graph_storage.degree.as_ref().unwrap_or(&empty_degree);
@@ -299,8 +312,23 @@ impl GfaParser {
         let paths_bp_len: Vec<_> = paths_len.values().map(|x| x.1).collect();
         let paths_len: Vec<_> = paths_len.values().map(|x| x.0).collect();
 
+        let mut group_lens: Vec<(String, f64)> = group_lens.into_iter().collect();
+        group_lens.sort_by(|a, b| (b.1).partial_cmp(&a.1).unwrap());
+        let (group_names, group_bp_lens) = group_lens.into_iter().unzip();
+
+        let paths_plot = ReportItem::Bar {
+            id: format!("info-{}-paths-plot", self.filename),
+            name: format!("info-{}-paths-plot", self.filename),
+            x_label: "Group".to_string(),
+            y_label: "Length in bps".to_string(),
+            labels: group_names,
+            values: group_bp_lens,
+            log_toggle: true,
+        };
+
         // group_count: gb.get_group_count(),
         let mut file_info = FileInfo::new("gfa");
+        file_info.add_plot(paths_plot);
         file_info.add_info(
             "Number of nodes",
             self.graph_storage.node_count.to_string().as_str(),
@@ -472,6 +500,7 @@ impl GfaParser {
         Vec<usize>,
         Vec<String>,
         HashMap<PathSegment, (u32, u32)>,
+        HashMap<String, f64>,
         Positions,
     )> {
         log::info!("parsing path + walk sequences");
@@ -530,6 +559,17 @@ impl GfaParser {
                 }
             })
             .collect_vec();
+        let mut group_lens: HashMap<String, f64> = HashMap::new();
+        paths_len.iter().for_each(|(k, v)| {
+            let p = &k.clear_coords();
+            let g = if let Some(name) = graph_mask.groups.get(p) {
+                name.clone()
+            } else {
+                panic!("Could not get {} from {:?}", p, graph_mask.groups)
+            };
+            let bp_len = v.1 as f64;
+            *group_lens.entry(g).or_default() += bp_len;
+        });
         let mgroup_names: HashSet<&str> = graph_mask
             .get_path_order(&self.graph_storage.path_segments)
             .into_iter()
@@ -557,6 +597,7 @@ impl GfaParser {
             feature_lengths,
             feature_names,
             paths_len,
+            group_lens,
             positions,
         ))
     }
