@@ -11,7 +11,8 @@ use crate::{
     hist::Hist,
     html_report::ReportItem,
     util::{
-        averageu32, median_already_sorted, n50_already_sorted, CountType, GroupSize, ItemIdSize,
+        averagef64, averageu32, median_already_sorted, n50_already_sorted, CountType, GroupSize,
+        ItemIdSize,
     },
 };
 
@@ -314,21 +315,11 @@ impl GfaParser {
 
         let mut group_lens: Vec<(String, f64)> = group_lens.into_iter().collect();
         group_lens.sort_by(|a, b| (b.1).partial_cmp(&a.1).unwrap());
-        let (group_names, group_bp_lens) = group_lens.into_iter().unzip();
-
-        let paths_plot = ReportItem::Bar {
-            id: format!("info-{}-paths-plot", self.filename),
-            name: format!("info-{}-paths-plot", self.filename),
-            x_label: "Group".to_string(),
-            y_label: "Length in bps".to_string(),
-            labels: group_names,
-            values: group_bp_lens,
-            log_toggle: true,
-        };
+        let table = group_lens.clone();
+        let (group_names, group_bp_lens): (Vec<String>, Vec<f64>) = group_lens.into_iter().unzip();
 
         // group_count: gb.get_group_count(),
         let mut file_info = FileInfo::new("gfa");
-        file_info.add_plot(paths_plot);
         file_info.add_info(
             "Number of nodes",
             self.graph_storage.node_count.to_string().as_str(),
@@ -448,6 +439,39 @@ impl GfaParser {
             "Average path length in bps",
             (averageu32(&paths_bp_len)).to_string().as_str(),
         );
+
+        file_info.add_info(
+            "Longest group length in bps",
+            &format!("{} ({})", group_bp_lens[0], group_names[0]),
+        );
+        file_info.add_info(
+            "Shortest group length in bps",
+            &format!(
+                "{} ({})",
+                group_bp_lens[group_bp_lens.len() - 1],
+                group_names[group_names.len() - 1]
+            ),
+        );
+        file_info.add_info(
+            "Average group length in bps",
+            (averagef64(&group_bp_lens).round() as u64)
+                .to_string()
+                .as_str(),
+        );
+
+        let paths_plot = ReportItem::Bar {
+            id: format!("info-{}-paths-plot", self.filename),
+            name: format!("info-{}-paths-plot", self.filename),
+            x_label: "Group".to_string(),
+            y_label: "Length in bps".to_string(),
+            labels: group_names,
+            values: group_bp_lens,
+            log_toggle: true,
+        };
+        file_info.add_plot(paths_plot);
+
+        file_info.add_table("group-lengths".to_string(), table);
+
         file_info
     }
 

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use itertools::Itertools;
 
 use crate::{
@@ -15,6 +17,8 @@ impl MatrixBasedAnalysis for Info {
             "# {}\n",
             std::env::args().collect::<Vec<String>>().join(" ")
         );
+        res.push_str("# Warning! This table is a multi-table, i.e. it might contain multiple tables concatenated together. They always have the form: <table-name>\t<key>\t<value>");
+        res.push_str("table-name\tkey\tvalue");
         res.push_str(matrix.get_file_info().to_string().as_str());
         Ok(res)
     }
@@ -71,6 +75,7 @@ impl Info {
 pub struct FileInfo {
     infos: Vec<(String, String)>,
     plots: Vec<ReportItem>,
+    tables: HashMap<String, Vec<(String, f64)>>,
     filetype: String,
 }
 
@@ -79,6 +84,7 @@ impl FileInfo {
         Self {
             infos: Vec::new(),
             plots: Vec::new(),
+            tables: HashMap::new(),
             filetype: filetype.to_string(),
         }
     }
@@ -89,6 +95,10 @@ impl FileInfo {
 
     pub fn add_info(&mut self, key: &str, value: &str) {
         self.infos.push((key.to_string(), value.to_string()));
+    }
+
+    pub fn add_table(&mut self, name: String, table: Vec<(String, f64)>) {
+        self.tables.insert(name, table);
     }
 
     pub fn add_plot(&mut self, plot: ReportItem) {
@@ -117,10 +127,24 @@ impl std::fmt::Display for FileInfo {
             .map(|(k, v)| {
                 let k_c = cleanup_string_for_printing(k);
                 let v_c = cleanup_string_for_printing(v);
-                format!("{}\t{}", k_c, v_c)
+                format!("info\t{}\t{}", k_c, v_c)
             })
             .join("\n");
-        write!(f, "{}", text)
+        write!(f, "{}\n", text)?;
+        let table_text = self
+            .tables
+            .iter()
+            .map(|(t, tc)| {
+                let t_c = cleanup_string_for_printing(t);
+                tc.iter()
+                    .map(|(k, v)| {
+                        let k_c = cleanup_string_for_printing(k);
+                        format!("{}\t{}\t{}", t_c, k_c, v)
+                    })
+                    .join("\n")
+            })
+            .join("\n");
+        write!(f, "{}\n", table_text)
     }
 }
 
