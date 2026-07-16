@@ -180,7 +180,7 @@ mod tests {
     fn test_file_info_printing() {
         let mut fileinfo = create_simple_gfa_file_info();
         fileinfo.add_info("Number of edges", "6");
-        let text = "number-of-nodes\t12\nnumber-of-edges\t6";
+        let text = "info\tnumber-of-nodes\t12\ninfo\tnumber-of-edges\t6\n\n";
         assert_eq!(&fileinfo.to_string(), text);
     }
 
