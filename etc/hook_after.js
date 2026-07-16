@@ -83,6 +83,17 @@ for (let key in objects.datasets) {
                     "nice": false
                 }
             };
+        } else if (h.data.values.length >= 400) {
+            mark_type = "area";
+            x_encoding = {
+                "field": "label",
+                "title": h.x_label,
+                "sort": null,
+                "type": h.ordinal ? 'ordinal' : 'nominal',
+                "axis": {
+                    "labelOverlap": "greedy"
+                }
+            };
         } else {
             mark_type = "bar";
             x_encoding = {

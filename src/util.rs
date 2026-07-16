@@ -388,6 +388,13 @@ pub fn averageu32(v: &[u32]) -> f32 {
     (v.iter().map(|x| *x as u64).sum::<u64>() as f64 / v.len() as f64) as f32
 }
 
+pub fn averagef64(v: &[f64]) -> f64 {
+    if v.len() == 0 {
+        return 0.0;
+    }
+    v.iter().map(|x| *x).sum::<f64>() / v.len() as f64
+}
+
 //pub fn averageu64 (v: &[u64]) -> f64 {
 //    v.iter().sum::<u64>() as f64 / v.len() as f64
 //}

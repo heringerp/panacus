@@ -405,7 +405,7 @@ impl AnalysisSection {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ReportItem {
     Bar {
         id: String,

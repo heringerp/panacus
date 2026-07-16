@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use itertools::Itertools;
 
 use crate::{
@@ -15,6 +17,8 @@ impl MatrixBasedAnalysis for Info {
             "# {}\n",
             std::env::args().collect::<Vec<String>>().join(" ")
         );
+        res.push_str("# Warning! This table is a multi-table, i.e. it might contain multiple tables concatenated together. They always have the form: <table-name>\t<key>\t<value>");
+        res.push_str("table-name\tkey\tvalue");
         res.push_str(matrix.get_file_info().to_string().as_str());
         Ok(res)
     }
@@ -36,21 +40,26 @@ impl MatrixBasedAnalysis for Info {
             .map(|(k, v)| vec![k.to_string(), v.to_string()])
             .collect_vec();
 
+        let countable = matrix.get_feature_type();
+        let mut plots = matrix.get_file_info().clone().take_plots();
+        let report_table = ReportItem::Table {
+            id: "info-1-table".to_string(),
+            header: vec!["Statistic".to_string(), "Value".to_string()],
+            values: info_values.clone(),
+        };
+        plots.insert(0, report_table);
+
         let run_name = matrix.get_run_name();
         let run_id = matrix.get_run_id();
         let safe_run_name = run_id.to_lowercase().replace(&[' ', '|', '\\'], "-");
         Ok(vec![AnalysisSection {
-            id: format!("{safe_run_name}-graph"),
+            id: format!("{safe_run_name}-file"),
             analysis: "Pangenome Info".to_string(),
             run_name: run_name.to_string(),
             run_id: run_id.to_string(),
-            countable: "Graph Info".to_string(),
+            countable: format!("File Info ({})", countable),
             table: Some(table.clone()),
-            items: vec![ReportItem::Table {
-                id: "info-1-table".to_string(),
-                header: vec!["Statistic".to_string(), "Value".to_string()],
-                values: info_values,
-            }],
+            items: plots,
             plot_downloads: get_default_plot_downloads(),
         }])
     }
@@ -62,9 +71,11 @@ impl Info {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileInfo {
     infos: Vec<(String, String)>,
+    plots: Vec<ReportItem>,
+    tables: HashMap<String, Vec<(String, f64)>>,
     filetype: String,
 }
 
@@ -72,6 +83,8 @@ impl FileInfo {
     pub fn new(filetype: &str) -> Self {
         Self {
             infos: Vec::new(),
+            plots: Vec::new(),
+            tables: HashMap::new(),
             filetype: filetype.to_string(),
         }
     }
@@ -82,6 +95,18 @@ impl FileInfo {
 
     pub fn add_info(&mut self, key: &str, value: &str) {
         self.infos.push((key.to_string(), value.to_string()));
+    }
+
+    pub fn add_table(&mut self, name: String, table: Vec<(String, f64)>) {
+        self.tables.insert(name, table);
+    }
+
+    pub fn add_plot(&mut self, plot: ReportItem) {
+        self.plots.push(plot);
+    }
+
+    pub fn take_plots(&mut self) -> Vec<ReportItem> {
+        std::mem::take(&mut self.plots)
     }
 
     pub fn iterate_infos(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
@@ -102,10 +127,24 @@ impl std::fmt::Display for FileInfo {
             .map(|(k, v)| {
                 let k_c = cleanup_string_for_printing(k);
                 let v_c = cleanup_string_for_printing(v);
-                format!("{}\t{}", k_c, v_c)
+                format!("info\t{}\t{}", k_c, v_c)
             })
             .join("\n");
-        write!(f, "{}", text)
+        write!(f, "{}\n", text)?;
+        let table_text = self
+            .tables
+            .iter()
+            .map(|(t, tc)| {
+                let t_c = cleanup_string_for_printing(t);
+                tc.iter()
+                    .map(|(k, v)| {
+                        let k_c = cleanup_string_for_printing(k);
+                        format!("{}\t{}\t{}", t_c, k_c, v)
+                    })
+                    .join("\n")
+            })
+            .join("\n");
+        write!(f, "{}\n", table_text)
     }
 }
 
