@@ -405,7 +405,7 @@ fn get_file_parser(
             let (groupby, groupby_sample, groupby_haplotype) = match grouping {
                 Some(Grouping::Sample) => (String::new(), true, false),
                 Some(Grouping::Haplotype) => (String::new(), false, true),
-                Some(Grouping::Custom(file)) => (file, false, true),
+                Some(Grouping::Custom(file)) => (file, false, false),
                 None => (String::new(), false, false),
             };
             let graph_mask_parameters = GraphMaskParameters {

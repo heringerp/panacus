@@ -171,6 +171,7 @@ impl GraphMask {
         graph_storage: &GraphStorage,
     ) -> Result<HashMap<PathSegment, String>, Error> {
         if groupby_haplotype {
+            log::info!("grouping by haplotype");
             Ok(graph_storage
                 .path_segments
                 .iter()
@@ -186,6 +187,7 @@ impl GraphMask {
                 })
                 .collect())
         } else if groupby_sample {
+            log::info!("grouping by sample");
             Ok(graph_storage
                 .path_segments
                 .iter()
