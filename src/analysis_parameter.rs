@@ -38,6 +38,7 @@ pub enum FileRun {
         grouping: Option<Grouping>,
         #[serde(default)]
         nice: bool,
+        #[serde(default)]
         count_type: CountType,
         analyses: Vec<AnalysisParameter>,
     },
@@ -50,6 +51,26 @@ pub enum FileRun {
         exclude: Option<String>,
         analyses: Vec<AnalysisParameter>,
     },
+    // Enum variant that contains general configuration
+    Config {
+        #[serde(flatten)]
+        config: Configuration,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord, Default)]
+pub struct Configuration {
+    output: OutputOptions,
+}
+
+// Output format
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord, Default)]
+pub enum OutputOptions {
+    // Single html file
+    #[default]
+    Html,
+    // Single txt file
+    Txt,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]

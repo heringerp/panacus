@@ -9,6 +9,7 @@ mod html_report;
 mod io;
 mod util;
 
+use anyhow::anyhow;
 use env_logger::Builder;
 use itertools::Itertools;
 use log::LevelFilter;
@@ -239,7 +240,17 @@ fn execute_pipeline<W: Write>(
     shall_write_html: bool,
     json: bool,
 ) -> anyhow::Result<()> {
+    let mut configuration = None;
     for file in instructions {
+        if let FileRun::Config { config } = file {
+            if configuration.is_some() {
+                return Err(anyhow!(
+                    "YAML file can only contain a single !Config section"
+                ));
+            }
+            configuration = Some(config);
+            continue;
+        }
         let (file_parser, analyses) = get_file_parser(file)?;
         let (hist_based, matrix_based) = split_analyses(analyses);
         log::info!("File parser generated");
@@ -471,6 +482,9 @@ fn get_file_parser(
                 exclude,
             )?),
             analyses,
+        )),
+        FileRun::Config { .. } => Err(anyhow!(
+            "Cannot create a valid file parser from a configuration"
         )),
     }
 }
