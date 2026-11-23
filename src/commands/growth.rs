@@ -18,7 +18,6 @@ pub fn get_subcommand() -> Command {
             arg!(-H --"groupby-haplotype" "Merge counts from paths belonging to same haplotype (ONLY IN GFA MODE)"),
             arg!(-S --"groupby-sample" "Merge counts from paths belonging to same sample (ONLY IN GFA MODE)"),
             arg!(-i --hist "Also include histogram in output"),
-            arg!(-a --alpha "Include alpha value as a comment in the output"),
             Arg::new("count").help("Graph quantity or histogram column to be counted").default_value("node").ignore_case(true).short('c').long("count").value_parser(clap_enum_variants!(CountType)),
             Arg::new("coverage").help("Ignore all countables with a coverage lower than the specified threshold. The coverage of a countable corresponds to the number of path/walk that contain it. Repeated appearances of a countable in the same path/walk are counted as one. You can pass a comma-separated list of coverage thresholds, each one will produce a separated growth curve (e.g., --coverage 2,3). Use --quorum to set a threshold in conjunction with each coverage (e.g., --quorum 0.5,0.9)")
             .short('l').long("coverage").default_value("1"),
@@ -32,7 +31,6 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<FileRun>, anyhow
         let coverage = args.get_one::<String>("coverage").cloned();
         let quorum = args.get_one::<String>("quorum").cloned();
         let add_hist = args.get_flag("hist");
-        let add_alpha = args.get_flag("alpha");
         let count = args
             .get_one::<CountType>("count")
             .expect("hist subcommand has count type")
@@ -61,7 +59,6 @@ pub fn get_instructions(args: &ArgMatches) -> Option<Result<Vec<FileRun>, anyhow
             coverage,
             quorum,
             add_hist,
-            add_alpha,
         }];
         if graph.ends_with(".tsv") || graph.ends_with(".tsv.gz") {
             if !subset.is_empty() || !exclude.is_empty() || grouping.is_some() {

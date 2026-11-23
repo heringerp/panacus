@@ -12,7 +12,6 @@ pub struct Growth {
     coverage: Option<String>,
     quorum: Option<String>,
     add_hist: bool,
-    add_alpha: bool,
     growths: Option<Vec<Vec<f64>>>,
     thresholds: Option<ThresholdContainer>,
 }
@@ -23,11 +22,7 @@ impl HistBasedAnalysis for Growth {
     }
 
     fn generate_table(&mut self, hist: &Hist) -> anyhow::Result<String> {
-        log::info!(
-            "reporting hist table, {}, {}",
-            self.add_hist,
-            self.add_alpha
-        );
+        log::info!("reporting hist table, {}", self.add_hist,);
 
         self.set_inner(hist)?;
         let growths = self.growths.as_ref().unwrap();
@@ -138,17 +133,11 @@ impl HistBasedAnalysis for Growth {
 }
 
 impl Growth {
-    pub fn new(
-        coverage: Option<String>,
-        quorum: Option<String>,
-        add_hist: bool,
-        add_alpha: bool,
-    ) -> Self {
+    pub fn new(coverage: Option<String>, quorum: Option<String>, add_hist: bool) -> Self {
         Self {
             coverage,
             quorum,
             add_hist,
-            add_alpha,
             growths: None,
             thresholds: None,
         }

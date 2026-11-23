@@ -73,8 +73,6 @@ pub enum AnalysisParameter {
         quorum: Option<String>,
         #[serde(default)]
         add_hist: bool,
-        #[serde(default)]
-        add_alpha: bool,
     },
     Table {
         total: bool,
@@ -138,8 +136,7 @@ impl AnalysisParameter {
                 coverage,
                 quorum,
                 add_hist,
-                add_alpha,
-            } => Analysis::HistBased(Box::new(Growth::new(coverage, quorum, add_hist, add_alpha))),
+            } => Analysis::HistBased(Box::new(Growth::new(coverage, quorum, add_hist))),
             Self::Table { total, order } => {
                 Analysis::MatrixBased(Box::new(Table::new(total, order)))
             }
