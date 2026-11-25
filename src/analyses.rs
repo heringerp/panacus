@@ -11,6 +11,7 @@ pub mod regional_variation;
 pub mod section_growth;
 pub mod similarity;
 pub mod table;
+mod utils;
 
 use std::collections::HashSet;
 

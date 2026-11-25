@@ -22,7 +22,7 @@ use crate::file_formats::vcf_parser::VcfCountType;
 use crate::util::CountType;
 use crate::OutputFormat;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, PartialOrd)]
 pub enum FileRun {
     Hist {
         file: String,
@@ -65,7 +65,7 @@ pub struct Configuration {
     pub output: OutputFormat,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, PartialOrd)]
 pub enum AnalysisParameter {
     Hist {},
     Growth {
@@ -113,6 +113,7 @@ pub enum AnalysisParameter {
         #[serde(default = "get_window_size")]
         window_size: usize,
         order: Option<String>,
+        extrapolation_factor: f64,
         windows: Option<String>,
         #[serde(default)]
         normalize_windows: bool,
@@ -175,11 +176,13 @@ impl AnalysisParameter {
             Self::RegionalGrowth {
                 window_size,
                 order,
+                extrapolation_factor,
                 windows,
                 normalize_windows,
             } => Analysis::MatrixBased(Box::new(RegionalGrowth::new(
                 window_size,
                 order,
+                extrapolation_factor,
                 windows,
                 normalize_windows,
             ))),

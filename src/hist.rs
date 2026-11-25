@@ -54,6 +54,11 @@ impl Hist {
         self.hist.resize(maximum_coverage + 1, 0);
     }
 
+    #[inline]
+    pub fn get_max_frequency(&self) -> usize {
+        self.hist.len() - 1
+    }
+
     #[cfg(test)]
     pub fn from_values(values: Vec<usize>) -> Self {
         Self {

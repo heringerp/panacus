@@ -289,6 +289,14 @@ impl CoverageMatrix {
                 .collect();
             all_references_buckets.push((reference.to_string(), annotated_feature_buckets));
         }
+
+        // Removes all empty references, e.g. DEFAULT reference
+        // We need the default reference to catch features that don't map to a reference, but if
+        // there is no such feature, we don't need to show it
+        all_references_buckets
+            .extract_if(.., |(_name, rb)| rb.len() == 1 && rb[0].2.is_empty())
+            .for_each(drop);
+
         all_references_buckets
             .into_iter()
             .map(move |(reference, buckets)| {

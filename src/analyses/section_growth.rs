@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-use crate::analyses::growth::calc_all_growths;
+use crate::analyses::utils::growth::calc_all_growths;
 use crate::analyses::MatrixBasedAnalysis;
 use crate::coverage_matrix::CoverageMatrix;
 use crate::file_formats::gfa_parser::{choose, ThresholdContainer};

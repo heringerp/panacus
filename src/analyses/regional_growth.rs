@@ -5,8 +5,8 @@ use std::cell::OnceCell;
 use varpro::prelude::*;
 use varpro::{problem::SeparableProblemBuilder, solvers::levmar::LevMarSolver};
 
-use crate::analyses::growth::calc_growth;
 use crate::analyses::regional_helpers::sort_values;
+use crate::analyses::utils::growth::{calc_growth, predict_ul_at_t};
 use crate::util::Threshold;
 use crate::{
     analyses::MatrixBasedAnalysis,
@@ -18,6 +18,7 @@ use crate::{
 
 pub struct RegionalGrowth {
     order: Option<String>,
+    extrapolation_factor: f64,
     window_size: usize,
     windows: Option<String>,
     normalize_windows: bool,
@@ -73,9 +74,9 @@ impl MatrixBasedAnalysis for RegionalGrowth {
             id: format!("{id_prefix}-Chrom"),
             name: "PLACEHOLDER".to_string(),
             labels: vec![
-                "2x increase".to_string(),
-                "3x increase".to_string(),
-                "5x increase".to_string(),
+                "Observed".to_string(),
+                "Predicted".to_string(),
+                "Added".to_string(),
             ],
             is_diverging: true,
             contains_outliers: false,
@@ -110,11 +111,13 @@ impl RegionalGrowth {
     pub fn new(
         window_size: usize,
         order: Option<String>,
+        extrapolation_factor: f64,
         windows: Option<String>,
         normalize_windows: bool,
     ) -> Self {
         Self {
             order,
+            extrapolation_factor,
             window_size,
             windows,
             normalize_windows,
@@ -130,6 +133,8 @@ impl RegionalGrowth {
 
     fn get_cached_data(&self, matrix: &CoverageMatrix) -> &Vec<(String, Vec<GrowthWindow>)> {
         self.cache.get_or_init(|| {
+            let max_extrapolation_factor =
+                (matrix.get_path_names().len() as f64).ln().floor() + 1.0;
             let mut error_counter = 0;
             let result = matrix
                 .get_regional_hists(self.window_size, self.window_size, self.windows.as_deref())
@@ -139,22 +144,36 @@ impl RegionalGrowth {
                             if hist.is_empty() {
                                 return None;
                             }
-                            let result = calc_growth_predictions(&hist);
+                            let max_extrapolation_factor =
+                                (hist.get_max_frequency() as f64).ln().floor() + 1.0;
+                            let extrapolation_factor = if self.extrapolation_factor > 0.0 {
+                                self.extrapolation_factor
+                            } else {
+                                if 2.0 > max_extrapolation_factor {
+                                    2.0
+                                } else {
+                                    max_extrapolation_factor
+                                }
+                            };
+                            if extrapolation_factor > max_extrapolation_factor {
+                                log::warn!("Extrapolation factor of {} is larger than theoretical max of {}", extrapolation_factor, max_extrapolation_factor);
+                            }
+                            let result = calc_growth_predictions(&hist, extrapolation_factor);
                             match result {
-                                Ok((d2, d3, d5)) => {
+                                Ok((observed, predicted, added)) => {
                                     if self.normalize_windows {
                                         let length = (end - start) as f64;
                                         Some((
                                             Growth(
-                                                d2 / length * 1e6,
-                                                d3 / length * 1e6,
-                                                d5 / length * 1e6,
+                                                observed / length * 1e6,
+                                                predicted / length * 1e6,
+                                                added / length * 1e6,
                                             ),
                                             start,
                                             end,
                                         ))
                                     } else {
-                                        Some((Growth(d2, d3, d5), start, end))
+                                        Some((Growth(observed, predicted, added), start, end))
                                     }
                                 }
                                 Err(_) => {
@@ -176,98 +195,16 @@ impl RegionalGrowth {
 }
 
 /// Simple triple struct holding
-/// Percent increase in terms of feature if haplotypes increase 2x
-/// Percent increase in terms of feature if haplotypes increase 3x
-/// Percent increase in terms of feature if haplotypes increase 5x
+/// Observed
+/// Predicted
+/// Added = Predicted - Observed
 #[derive(Debug)]
 struct Growth(f64, f64, f64);
 
-pub fn calc_growth_predictions(hist: &Hist) -> anyhow::Result<(f64, f64, f64)> {
-    let d = hist.get_hist_values().iter().sum::<usize>() as f64;
-    let n = hist.get_hist_values().len();
-    let h1_diff = get_h1_difference(hist)?;
-    let gte = calc_good_toulmin(hist, 1.8);
-
-    let mut modified_hist = hist.clone();
-    modified_hist.correct_h1(h1_diff as usize);
-    let (k, alpha, f_new) = fit_fnew(&modified_hist)?;
-
-    let d_hat1: f64 = (1..n)
-        .map(|x| {
-            if x < n / 2 {
-                f_new[x - 1]
-            } else {
-                k * (x as f64).powf(-alpha)
-            }
-        })
-        .sum::<f64>()
-        + 1.0 * h1_diff;
-
-    let d_hat1_8: f64 = (1..(1.8 * (n as f64)) as usize)
-        .map(|x| {
-            if x < n / 2 {
-                f_new[x - 1]
-            } else {
-                k * (x as f64).powf(-alpha)
-            }
-        })
-        .sum::<f64>()
-        + 1.8 * h1_diff;
-
-    let d_hat2: f64 = (1..2 * n)
-        .map(|x| {
-            if x < n / 2 {
-                f_new[x - 1]
-            } else {
-                k * (x as f64).powf(-alpha)
-            }
-        })
-        .sum::<f64>()
-        + 2.0 * h1_diff;
-
-    let d_hat3: f64 = (1..3 * n)
-        .map(|x| {
-            if x < n / 2 {
-                f_new[x - 1]
-            } else {
-                k * (x as f64).powf(-alpha)
-            }
-        })
-        .sum::<f64>()
-        + 3.0 * h1_diff;
-
-    let d_hat5: f64 = (1..5 * n)
-        .map(|x| {
-            if x < n / 2 {
-                f_new[x - 1]
-            } else {
-                k * (x as f64).powf(-alpha)
-            }
-        })
-        .sum::<f64>()
-        + 5.0 * h1_diff;
-
-    if (d - d_hat1).abs() > 0.1 * d {
-        return Err(anyhow!(
-            "Too much difference in model ({}) and ground-truth ({})",
-            d_hat1,
-            d
-        ));
-    }
-
-    if (gte - d_hat1_8).abs() > 0.1 * gte {
-        return Err(anyhow!(
-            "Too much difference in parametric ({}) and non-parametric ({}) model",
-            d_hat2,
-            gte
-        ));
-    }
-
-    let d2_ratio = d_hat2 / d;
-    let d3_ratio = d_hat3 / d;
-    let d5_ratio = d_hat5 / d;
-
-    Ok((d2_ratio, d3_ratio, d5_ratio))
+fn calc_growth_predictions(hist: &Hist, target: f64) -> anyhow::Result<(f64, f64, f64)> {
+    let predicted = predict_ul_at_t(hist, target, None);
+    let observed = hist.get_number_of_features() as f64;
+    Ok((observed, predicted, predicted - observed))
 }
 
 /// Returns K and alpha
