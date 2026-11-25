@@ -133,8 +133,6 @@ impl RegionalGrowth {
 
     fn get_cached_data(&self, matrix: &CoverageMatrix) -> &Vec<(String, Vec<GrowthWindow>)> {
         self.cache.get_or_init(|| {
-            let max_extrapolation_factor =
-                (matrix.get_path_names().len() as f64).ln().floor() + 1.0;
             let mut error_counter = 0;
             let result = matrix
                 .get_regional_hists(self.window_size, self.window_size, self.windows.as_deref())
