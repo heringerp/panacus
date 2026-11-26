@@ -29,12 +29,12 @@ impl MatrixBasedAnalysis for RegionalGrowth {
     fn generate_table(&mut self, matrix: &CoverageMatrix) -> anyhow::Result<String> {
         let data = self.get_cached_data(matrix);
 
-        let mut text = "reference\tstart\tend\tHill0\tHill1\tHill2\n".to_string();
+        let mut text = "reference\tstart\tend\tObserved\tPredicted\tAdded\n".to_string();
         for (sequence_id, sequence) in data {
-            for (variation, start, end) in sequence {
+            for (growth, start, end) in sequence {
                 let line = format!(
                     "{}\t{}\t{}\t{}\t{}\t{}\n",
-                    sequence_id, start, end, variation.0, variation.1, variation.2
+                    sequence_id, start, end, growth.0, growth.1, growth.2
                 );
                 text.push_str(&line);
             }

@@ -21,7 +21,7 @@ pub fn predict_ul(hist: &Hist, target: f64, max_rel_se: Option<f64>) -> Vec<f64>
 pub fn predict_ul_at_t(hist: &Hist, target: f64, max_rel_se: Option<f64>) -> f64 {
     let max_rel_se = max_rel_se.unwrap_or(0.01);
     let t = target - 1.0;
-    predict_sgt(hist, t, max_rel_se)
+    predict_sgt(hist, t, max_rel_se).floor()
 }
 
 fn sgt_at_int_l(hist: &Hist, t: f64, l: usize, c_buf: &mut Vec<f64>) -> (f64, f64) {
