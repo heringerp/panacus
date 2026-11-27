@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{BufRead, BufReader},
+    rc::Rc,
 };
 
 use itertools::{Itertools, MinMaxResult};
@@ -14,9 +15,6 @@ use crate::{
 };
 
 type Buckets = HashMap<usize, Vec<(usize, usize)>>;
-
-/// (start_coord, end_coord, list with feature ids)
-type ReferenceBucket = Vec<(usize, usize, Vec<usize>)>;
 
 #[derive(Debug)]
 pub struct CoverageMatrix {
@@ -261,52 +259,41 @@ impl CoverageMatrix {
         slide_step: usize,
         window_file: Option<&str>,
     ) -> impl Iterator<Item = (String, impl Iterator<Item = (usize, usize, Hist)> + '_)> + '_ {
-        let bed_buckets: Option<HashMap<usize, Vec<(usize, usize)>>> =
-            window_file.map(|file_path| self.get_buckets_from_bucket_file(file_path));
-        let mut all_references_buckets: Vec<(String, ReferenceBucket)> = Vec::new();
-        for (ref_id, reference) in self.feature_positions.references.iter().enumerate() {
-            let (min, feature_buckets) = match bed_buckets.as_ref() {
-                Some(b) => {
-                    if let Some(res) = self.get_feature_buckets_for_given_buckets(ref_id, b) {
-                        res
-                    } else {
-                        continue;
-                    }
+        let bed_buckets: Option<Rc<Buckets>> =
+            window_file.map(|file_path| Rc::new(self.get_buckets_from_bucket_file(file_path)));
+
+        self.feature_positions
+            .references
+            .iter()
+            .enumerate()
+            .filter_map(move |(ref_id, reference)| {
+                let (min, feature_buckets) = match bed_buckets.as_ref() {
+                    Some(b) => self.get_feature_buckets_for_given_buckets(ref_id, b)?,
+                    None => self.get_feature_buckets(ref_id, window_size, slide_step),
+                };
+
+                if feature_buckets.len() == 1 && feature_buckets[0].is_empty() {
+                    return None;
                 }
-                None => self.get_feature_buckets(ref_id, window_size, slide_step),
-            };
-            let annotated_feature_buckets: Vec<(usize, usize, Vec<usize>)> = feature_buckets
-                .into_iter()
-                .enumerate()
-                .map(|(idx, bucket)| {
-                    let (start, end) = if let Some(bed_buckets) = bed_buckets.as_ref() {
-                        bed_buckets[&ref_id][idx]
-                    } else {
-                        (min + idx * slide_step, min + idx * slide_step + window_size)
-                    };
-                    (start, end, bucket)
-                })
-                .collect();
-            all_references_buckets.push((reference.to_string(), annotated_feature_buckets));
-        }
 
-        // Removes all empty references, e.g. DEFAULT reference
-        // We need the default reference to catch features that don't map to a reference, but if
-        // there is no such feature, we don't need to show it
-        all_references_buckets
-            .extract_if(.., |(_name, rb)| rb.len() == 1 && rb[0].2.is_empty())
-            .for_each(drop);
+                let bed_buckets_ref = bed_buckets.clone();
+                let window_iter =
+                    feature_buckets
+                        .into_iter()
+                        .enumerate()
+                        .map(move |(idx, bucket)| {
+                            let (start, end) = match &bed_buckets_ref {
+                                Some(b) => b[&ref_id][idx],
+                                None => {
+                                    let start = min + idx * slide_step;
+                                    (start, start.saturating_add(window_size))
+                                }
+                            };
+                            let hist = self.get_hist_for_features(&bucket);
+                            (start, end, hist)
+                        });
 
-        all_references_buckets
-            .into_iter()
-            .map(move |(reference, buckets)| {
-                (
-                    reference,
-                    buckets.into_iter().map(move |(start, end, bucket)| {
-                        let hist = self.get_hist_for_features(&bucket);
-                        (start, end, hist)
-                    }),
-                )
+                Some((reference.to_string(), window_iter))
             })
     }
 

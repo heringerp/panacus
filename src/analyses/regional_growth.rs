@@ -200,7 +200,7 @@ impl RegionalGrowth {
 struct Growth(f64, f64, f64);
 
 fn calc_growth_predictions(hist: &Hist, target: f64) -> anyhow::Result<(f64, f64, f64)> {
-    let predicted = predict_ul_at_t(hist, target, None);
+    let predicted = predict_ul_at_t(hist, target, Some(0.03));
     let observed = hist.get_number_of_features() as f64;
     Ok((observed, predicted, predicted - observed))
 }
